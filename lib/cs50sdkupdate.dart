@@ -1,3 +1,6 @@
+
+import 'dart:typed_data';
+
 import 'cs50sdkupdate_platform_interface.dart';
 
 class Cs50sdkupdate {
@@ -47,5 +50,159 @@ class Cs50sdkupdate {
 
   Future<String?> piccNfc(List<int> nfcDataLen, List<int> technology, List<int> nfcUid, List<int> ndefMessage) async {
     return await Cs50sdkupdatePlatform.instance.piccNfc(nfcDataLen, technology, nfcUid, ndefMessage);
+  }
+
+  Future<int?> sysLogSwitch(int level) async {
+    return await Cs50sdkupdatePlatform.instance.sysLogSwitch(level);
+  }
+
+  Future<int?> sysGetRand(List<int> rnd) async {
+    return await Cs50sdkupdatePlatform.instance.sysGetRand(rnd);
+  }
+
+  Future<int?> sysUpdate() async {
+    return await Cs50sdkupdatePlatform.instance.sysUpdate();
+  }
+
+  Future<int?> sysGetVersion(List<int> buf) async {
+    return await Cs50sdkupdatePlatform.instance.sysGetVersion(buf);
+  }
+
+  Future<int?> sysReadSN(List<int> SN) async {
+    return await Cs50sdkupdatePlatform.instance.sysReadSN(SN);
+  }
+
+  Future<String?> sysApiVerson() async {
+    return await Cs50sdkupdatePlatform.instance.sysApiVerson();
+  }
+
+  Future<String?> getOSVersion() async {
+    return await Cs50sdkupdatePlatform.instance.getOSVersion();
+  }
+
+  Future<String?> getDeviceId() async {
+    return await Cs50sdkupdatePlatform.instance.getDeviceId();
+  }
+
+// Printing Methods
+  Future<String?> printInit() {
+    return Cs50sdkupdatePlatform.instance.printInit();
+  }
+
+  Future<String?> printInitWithParams(int gray, int fontHeight, int fontWidth, int fontZoom) {
+    return Cs50sdkupdatePlatform.instance.printInitWithParams(gray, fontHeight, fontWidth, fontZoom);
+  }
+
+  Future<String?> printSetFont(int asciiFontHeight, int extendFontHeight, int zoom) {
+    return Cs50sdkupdatePlatform.instance.printSetFont(asciiFontHeight, extendFontHeight, zoom);
+  }
+
+  Future<String?> printSetGray(int nLevel) {
+    return Cs50sdkupdatePlatform.instance.printSetGray(nLevel);
+  }
+
+  Future<String?> printSetSpace(int x, int y) {
+    return Cs50sdkupdatePlatform.instance.printSetSpace(x, y);
+  }
+
+  Future<String?> printGetFont() {
+    return Cs50sdkupdatePlatform.instance.printGetFont();
+  }
+
+  Future<String?> printStep(int pixel) {
+    return Cs50sdkupdatePlatform.instance.printStep(pixel);
+  }
+
+  Future<String?> printSetVoltage(int voltage) {
+    return Cs50sdkupdatePlatform.instance.printSetVoltage(voltage);
+  }
+
+  Future<String?> printIsCharge(int ischarge) {
+    return Cs50sdkupdatePlatform.instance.printIsCharge(ischarge);
+  }
+
+  Future<String?> printSetLinPixelDis(int linDistance) {
+    return Cs50sdkupdatePlatform.instance.printSetLinPixelDis(linDistance);
+  }
+
+  Future<String?> printStr(String str) {
+    return Cs50sdkupdatePlatform.instance.printStr(str);
+  }
+
+  Future<String?> printBmp(Uint8List bmpData) {
+    print('printBmpDAta: $bmpData');
+    return Cs50sdkupdatePlatform.instance.printBmp(bmpData);
+  }
+
+  Future<String?> printBarcode(String contents, int desiredWidth, int desiredHeight, String barcodeFormat) {
+    return Cs50sdkupdatePlatform.instance.printBarcode(contents, desiredWidth, desiredHeight, barcodeFormat);
+  }
+
+  Future<String?> printQrCode(String contents, int desiredWidth, int desiredHeight, String barcodeFormat) {
+    return Cs50sdkupdatePlatform.instance.printQrCode(contents, desiredWidth, desiredHeight, barcodeFormat);
+  }
+
+  Future<String?> printCutQrCodeStr(String contents, String printTxt, int distance, int desiredWidth, int desiredHeight, String barcodeFormat) {
+    return Cs50sdkupdatePlatform.instance.printCutQrCodeStr(contents, printTxt, distance, desiredWidth, desiredHeight, barcodeFormat);
+  }
+
+  Future<String?> printStart() {
+    return Cs50sdkupdatePlatform.instance.printStart();
+  }
+
+  Future<String?> printSetLeftIndent(int x) {
+    return Cs50sdkupdatePlatform.instance.printSetLeftIndent(x);
+  }
+
+  Future<String?> printSetAlign(int x) {
+    return Cs50sdkupdatePlatform.instance.printSetAlign(x);
+  }
+
+  Future<String?> printCharSpace(int x) {
+    return Cs50sdkupdatePlatform.instance.printCharSpace(x);
+  }
+
+  Future<String?> printSetLineSpace(int x) {
+    return Cs50sdkupdatePlatform.instance.printSetLineSpace(x);
+  }
+
+  Future<String?> printSetLeftSpace(int x) {
+    return Cs50sdkupdatePlatform.instance.printSetLeftSpace(x);
+  }
+
+  Future<String?> printSetSpeed(int iSpeed) {
+    return Cs50sdkupdatePlatform.instance.printSetSpeed(iSpeed);
+  }
+
+  Future<String?> printCheckStatus() {
+    return Cs50sdkupdatePlatform.instance.printCheckStatus();
+  }
+
+  Future<String?> printFeedPaper(int step) {
+    return Cs50sdkupdatePlatform.instance.printFeedPaper(step);
+  }
+
+  Future<String?> printSetMode(int mode) {
+    return Cs50sdkupdatePlatform.instance.printSetMode(mode);
+  }
+
+  Future<String?> printSetUnderline(int x) {
+    return Cs50sdkupdatePlatform.instance.printSetUnderline(x);
+  }
+
+  Future<String?> printSetReverse(int x) {
+    return Cs50sdkupdatePlatform.instance.printSetReverse(x);
+  }
+
+  Future<String?> printSetBold(int x) {
+    return Cs50sdkupdatePlatform.instance.printSetBold(x);
+  }
+
+  Future<String?> printLogo(Uint8List logo) {
+    return Cs50sdkupdatePlatform.instance.printLogo(logo);
+  }
+
+  Future<String?> printLabLocate(int step) {
+    return Cs50sdkupdatePlatform.instance.printLabLocate(step);
   }
 }
