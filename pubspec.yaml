@@ -1,7 +1,7 @@
 name: cs50sdkupdate
 description: "The CS50 SDK Update Flutter package provides a comprehensive solution for integrating with the CS POS ES, facilitating operations such as printer management, PICC operations, and more. This package simplifies the process of handling complex POS functionalities, ensuring a smooth and efficient development experience."
-version: 0.0.1
-homepage: "https://documention.netlify.app"
+version: 0.0.3
+homepage: "https://github.com/samuelkchris/-cs50sdkupdate.git"
 
 environment:
   sdk: '>=3.2.2 <4.0.0'
@@ -42,6 +42,7 @@ flutter:
       android:
         package: com.pinnisoft.cs50sdkupdate
         pluginClass: Cs50sdkupdatePlugin
+        ffiPlugin: true
 
   # To add assets to your plugin package, add an assets section, like this:
   # For details regarding assets in packages, see
