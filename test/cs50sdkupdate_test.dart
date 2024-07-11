@@ -306,6 +306,50 @@ class MockCs50sdkupdatePlatform
     // TODO: implement printStr
     throw UnimplementedError();
   }
+
+  @override
+  Future<void> cancelPrintJob(String jobId) {
+    // TODO: implement cancelPrintJob
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getAllPrintJobs() {
+    // TODO: implement getAllPrintJobs
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> restartPrintJob(String jobId) {
+    // TODO: implement restartPrintJob
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> startMonitoringPrintJobs() {
+    // TODO: implement startMonitoringPrintJobs
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<String> printPdf(String pdfPath) {
+    // TODO: implement printPdf
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> cancelJob(String jobId) {
+    // TODO: implement cancelJob
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<Map<String, dynamic>?> getPrintStats() {
+    // TODO: implement getPrintStats
+    throw UnimplementedError();
+  }
+
+  
 }
 
 void main() {

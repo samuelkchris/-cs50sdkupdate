@@ -1,12 +1,15 @@
+import 'dart:async';
 import 'dart:io';
 
+import 'package:cs50sdkupdate/cs50sdkupdate.dart';
 import 'package:cs50sdkupdate_example/pdf_printer.dart';
 import 'package:cs50sdkupdate_example/print_status_screen.dart';
 import 'package:flutter/material.dart';
-import 'dart:async';
 import 'package:flutter/services.dart';
-import 'package:cs50sdkupdate/cs50sdkupdate.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:printing/printing.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:pdf/pdf.dart';
 import 'editor.dart';
 
 void main() {
@@ -45,17 +48,58 @@ class _HomePageState extends State<HomePage> {
   String _piccStatus = 'PICC not initialized';
   final _cs50sdkupdatePlugin = Cs50sdkupdate();
   late PrintJobManager _printJobManager;
+  List<Map<String, dynamic>> _printJobs = [];
 
   @override
   void initState() {
     super.initState();
+    _startMonitoring();
     _printJobManager = PrintJobManager(_cs50sdkupdatePlugin);
-
   }
+
+  Future<void> _startMonitoring() async {
+    try {
+      await _cs50sdkupdatePlugin.startMonitoringPrintJobs();
+      _refreshPrintJobs();
+    } catch (e) {
+      print('Failed to start monitoring: $e');
+    }
+  }
+
+  Future<void> _refreshPrintJobs() async {
+    try {
+      final jobs = await _cs50sdkupdatePlugin.getAllPrintJobs();
+      setState(() {
+        _printJobs = jobs;
+      });
+    } catch (e) {
+      print('Failed to get print jobs: $e');
+    }
+  }
+
+  Future<void> _cancelPrintJob(String jobId) async {
+    try {
+      await _cs50sdkupdatePlugin.cancelPrintJob(jobId);
+      _refreshPrintJobs();
+    } catch (e) {
+      print('Failed to cancel print job: $e');
+    }
+  }
+
+  Future<void> _restartPrintJob(String jobId) async {
+    try {
+      await _cs50sdkupdatePlugin.restartPrintJob(jobId);
+      _refreshPrintJobs();
+    } catch (e) {
+      print('Failed to restart print job: $e');
+    }
+  }
+
   Future<void> _getPlatformVersion() async {
     String platformVersion;
     try {
-      platformVersion = await _cs50sdkupdatePlugin.getPlatformVersion() ?? 'Unknown platform version';
+      platformVersion = await _cs50sdkupdatePlugin.getPlatformVersion() ??
+          'Unknown platform version';
       _showSnackBar('Platform version: $platformVersion');
     } on PlatformException {
       _showSnackBar('Failed to get platform version.');
@@ -146,7 +190,8 @@ class _HomePageState extends State<HomePage> {
     int samSlotNo = 1;
     List<int> samHostKey = List.filled(16, 0);
     try {
-      String? samInitResponse = await _cs50sdkupdatePlugin.piccSamAv2Init(samSlotNo, samHostKey);
+      String? samInitResponse =
+          await _cs50sdkupdatePlugin.piccSamAv2Init(samSlotNo, samHostKey);
       _showSnackBar('SAM AV2 Init Response: $samInitResponse');
     } catch (e) {
       _showSnackBar('Failed to initialize SAM AV2: $e');
@@ -160,7 +205,8 @@ class _HomePageState extends State<HomePage> {
     List<int> ndefMessage = List.filled(500, 0);
 
     try {
-      String? nfcResponse = await _cs50sdkupdatePlugin.piccNfc(nfcDataLen, technology, nfcUid, ndefMessage);
+      String? nfcResponse = await _cs50sdkupdatePlugin.piccNfc(
+          nfcDataLen, technology, nfcUid, ndefMessage);
       _showSnackBar('NFC Response: $nfcResponse');
     } catch (e) {
       _showSnackBar('Failed to execute NFC: $e');
@@ -197,7 +243,8 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _printBarcode() async {
     try {
-      await _cs50sdkupdatePlugin.printBarcode('1234567890', 300, 100, 'CODE_128');
+      await _cs50sdkupdatePlugin.printBarcode(
+          '1234567890', 300, 100, 'CODE_128');
       await _cs50sdkupdatePlugin.printStart();
       _showSnackBar('Barcode printed successfully');
     } catch (e) {
@@ -207,14 +254,14 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _printQRCode() async {
     try {
-      await _cs50sdkupdatePlugin.printQrCode('https://example.com', 200, 200, 'QR_CODE');
+      await _cs50sdkupdatePlugin.printQrCode(
+          'https://example.com', 200, 200, 'QR_CODE');
       await _cs50sdkupdatePlugin.printStart();
       _showSnackBar('QR Code printed successfully');
     } catch (e) {
       _showSnackBar('Failed to print QR Code: $e');
     }
   }
-
 
   Future<void> _initPrinterWithParams() async {
     try {
@@ -317,11 +364,10 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-
-
   Future<void> _printCutQRCodeStr() async {
     try {
-      await _cs50sdkupdatePlugin.printCutQrCodeStr('https://example.com', 'Scan me!', 10, 200, 200, 'QR_CODE');
+      await _cs50sdkupdatePlugin.printCutQrCodeStr(
+          'https://example.com', 'Scan me!', 10, 200, 200, 'QR_CODE');
       _showSnackBar('QR Code with text printed successfully');
     } catch (e) {
       _showSnackBar('Failed to print QR Code with text: $e');
@@ -348,7 +394,8 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _printSetAlign() async {
     try {
-      await _cs50sdkupdatePlugin.printSetAlign(1); // 0: left, 1: center, 2: right
+      await _cs50sdkupdatePlugin
+          .printSetAlign(1); // 0: left, 1: center, 2: right
       _showSnackBar('Alignment set successfully');
     } catch (e) {
       _showSnackBar('Failed to set alignment: $e');
@@ -411,7 +458,8 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _printSetMode() async {
     try {
-      await _cs50sdkupdatePlugin.printSetMode(0); // 0: normal, 1: white on black
+      await _cs50sdkupdatePlugin
+          .printSetMode(0); // 0: normal, 1: white on black
       _showSnackBar('Print mode set successfully');
     } catch (e) {
       _showSnackBar('Failed to set print mode: $e');
@@ -448,7 +496,7 @@ class _HomePageState extends State<HomePage> {
   Future<void> _printLogo() async {
     // Note: You'll need to provide actual logo data
     try {
-      Uint8List logoData =  Uint8List.fromList([
+      Uint8List logoData = Uint8List.fromList([
         0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, // Row 1
         0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, // Row 2
         0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, // Row 3
@@ -475,6 +523,7 @@ class _HomePageState extends State<HomePage> {
       _showSnackBar('Failed to locate label: $e');
     }
   }
+
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(message),
@@ -504,25 +553,31 @@ class _HomePageState extends State<HomePage> {
             children: <Widget>[
               Card(
                 elevation: 5,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15)),
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
                     children: [
-                      Text('Platform: $_platformVersion', style: const TextStyle(fontSize: 16)),
+                      Text('Platform: $_platformVersion',
+                          style: const TextStyle(fontSize: 16)),
                       const SizedBox(height: 8),
-                      Text('PICC Status: $_piccStatus', style: const TextStyle(fontSize: 16)),
+                      Text('PICC Status: $_piccStatus',
+                          style: const TextStyle(fontSize: 16)),
                       const SizedBox(height: 8),
-                      Text('Polling: $_pollingData', style: const TextStyle(fontSize: 16)),
+                      Text('Polling: $_pollingData',
+                          style: const TextStyle(fontSize: 16)),
                       const SizedBox(height: 8),
-                      Text('Printer: $_printStatus', style: const TextStyle(fontSize: 16)),
+                      Text('Printer: $_printStatus',
+                          style: const TextStyle(fontSize: 16)),
                     ],
                   ),
                 ),
               ),
               const SizedBox(height: 16),
               _buildSection('Initialization', [
-                _buildButton(Icons.power_settings_new, 'Get Platform Version', _getPlatformVersion),
+                _buildButton(Icons.power_settings_new, 'Get Platform Version',
+                    _getPlatformVersion),
                 _buildButton(Icons.nfc, 'Initialize PICC', initializePicc),
               ]),
               const SizedBox(height: 16),
@@ -535,35 +590,48 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(height: 16),
               _buildSection('Other Operations', [
                 _buildButton(Icons.code, 'Execute Commands', executeCommands),
-                _buildButton(Icons.memory, 'SAM AV2 Init', executePiccSamAv2Init),
+                _buildButton(
+                    Icons.memory, 'SAM AV2 Init', executePiccSamAv2Init),
                 _buildButton(Icons.nfc, 'Execute NFC', executeNfc),
               ]),
               const SizedBox(height: 16),
               _buildSection('Printer Initialization', [
                 _buildButton(Icons.print, 'Initialize Printer', _initPrinter),
-                _buildButton(Icons.settings, 'Init with Params', _initPrinterWithParams),
+                _buildButton(
+                    Icons.settings, 'Init with Params', _initPrinterWithParams),
               ]),
               const SizedBox(height: 16),
               _buildSection('Printer Settings', [
                 _buildButton(Icons.font_download, 'Set Font', _printSetFont),
-                _buildButton(Icons.format_color_fill, 'Set Gray', _printSetGray),
+                _buildButton(
+                    Icons.format_color_fill, 'Set Gray', _printSetGray),
                 _buildButton(Icons.space_bar, 'Set Space', _printSetSpace),
-                _buildButton(Icons.font_download_outlined, 'Get Font', _printGetFont),
+                _buildButton(
+                    Icons.font_download_outlined, 'Get Font', _printGetFont),
                 _buildButton(Icons.height, 'Set Step', _printStep),
-                _buildButton(Icons.battery_charging_full, 'Set Voltage', _printSetVoltage),
+                _buildButton(Icons.battery_charging_full, 'Set Voltage',
+                    _printSetVoltage),
                 _buildButton(Icons.power, 'Set Charge', _printIsCharge),
-                _buildButton(Icons.linear_scale, 'Set Line Pixel', _printSetLinPixelDis),
-                _buildButton(Icons.format_align_left, 'Set Left Indent', _printSetLeftIndent),
-                _buildButton(Icons.format_align_center, 'Set Alignment', _printSetAlign),
-                _buildButton(Icons.space_bar_outlined, 'Set Char Space', _printCharSpace),
-                _buildButton(Icons.format_line_spacing, 'Set Line Space', _printSetLineSpace),
-                _buildButton(Icons.format_indent_increase, 'Set Left Space', _printSetLeftSpace),
+                _buildButton(
+                    Icons.linear_scale, 'Set Line Pixel', _printSetLinPixelDis),
+                _buildButton(Icons.format_align_left, 'Set Left Indent',
+                    _printSetLeftIndent),
+                _buildButton(
+                    Icons.format_align_center, 'Set Alignment', _printSetAlign),
+                _buildButton(Icons.space_bar_outlined, 'Set Char Space',
+                    _printCharSpace),
+                _buildButton(Icons.format_line_spacing, 'Set Line Space',
+                    _printSetLineSpace),
+                _buildButton(Icons.format_indent_increase, 'Set Left Space',
+                    _printSetLeftSpace),
                 _buildButton(Icons.speed, 'Set Speed', _printSetSpeed),
                 _buildButton(Icons.mode, 'Set Mode', _printSetMode),
-                _buildButton(Icons.format_underlined, 'Set Underline', _printSetUnderline),
+                _buildButton(Icons.format_underlined, 'Set Underline',
+                    _printSetUnderline),
                 _buildButton(Icons.flip, 'Set Reverse', _printSetReverse),
                 _buildButton(Icons.format_bold, 'Set Bold', _printSetBold),
-                _buildButton(Icons.edit_note_outlined, 'Document Editor',_openEditor)
+                _buildButton(
+                    Icons.edit_note_outlined, 'Document Editor', _openEditor)
               ]),
               const SizedBox(height: 16),
               _buildSection('Printing Operations', [
@@ -571,26 +639,84 @@ class _HomePageState extends State<HomePage> {
                 _buildButton(Icons.image, 'Print Bitmap', _printBmp),
                 _buildButton(Icons.qr_code, 'Print Barcode', _printBarcode),
                 _buildButton(Icons.qr_code_2, 'Print QR Code', _printQRCode),
-                _buildButton(Icons.qr_code_scanner, 'Print QR with Text', _printCutQRCodeStr),
+                _buildButton(Icons.qr_code_scanner, 'Print QR with Text',
+                    _printCutQRCodeStr),
                 _buildButton(Icons.play_arrow, 'Start Print', _printStart),
                 _buildButton(Icons.logo_dev, 'Print Logo', _printLogo),
-                _buildButton(Icons.text_snippet_rounded, 'Print All Text', _printText),
+                _buildButton(
+                    Icons.text_snippet_rounded, 'Print All Text', _printText),
                 _buildButton(Icons.picture_as_pdf, 'Print PDF', _printPdf),
-                _buildButton(Icons.picture_as_pdf, 'Print Existing PDF', _printExistingPdf),
-                _buildButton(Icons.add_to_photos, 'Create & Print Simple PDF', _createAndPrintSimplePdf),
-
+                _buildButton(Icons.picture_as_pdf, 'Print Existing PDF',
+                    _printExistingPdf),
+                _buildButton(Icons.add_to_photos, 'Create & Print Simple PDF',
+                    _createAndPrintSimplePdf),
               ]),
               const SizedBox(height: 16),
               _buildSection('Printer Utilities', [
-                _buildButton(Icons.check_circle_outline, 'Check Status', _printCheckStatus),
-                _buildButton(Icons.vertical_align_bottom, 'Feed Paper', _printFeedPaper),
-                _buildButton(Icons.label_outline, 'Locate Label', _printLabLocate),
-                _buildButton(Icons.list, 'Print Status', _openPrintStatusScreen),
+                _buildButton(Icons.check_circle_outline, 'Check Status',
+                    _printCheckStatus),
+                _buildButton(
+                    Icons.vertical_align_bottom, 'Feed Paper', _printFeedPaper),
+                _buildButton(
+                    Icons.label_outline, 'Locate Label', _printLabLocate),
+                _buildButton(
+                    Icons.list, 'Print Status', _openPrintStatusScreen),
+              ]),
+              const SizedBox(height: 16),
+              _buildSection('Print Job Operations', [
+                _buildButton(
+                    Icons.refresh, 'Refresh Print Jobs', _refreshPrintJobs),
+                _buildButton(Icons.list, 'View Print Jobs', _viewPrintJobs),
               ]),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  void _viewPrintJobs() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Print Jobs'),
+          content: Container(
+            width: double.maxFinite,
+            child: ListView.builder(
+              itemCount: _printJobs.length,
+              itemBuilder: (context, index) {
+                final job = _printJobs[index];
+                return ListTile(
+                  title: Text('Job ID: ${job['id']}'),
+                  subtitle: Text('Status: ${job['status']}'),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.cancel),
+                        onPressed: () => _cancelPrintJob(job['id']),
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.refresh),
+                        onPressed: () => _restartPrintJob(job['id']),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: Text('Close'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -603,7 +729,9 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text(title,
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             Wrap(
               spacing: 8,
@@ -644,7 +772,8 @@ class _HomePageState extends State<HomePage> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => ModernPrintStatusScreen(jobManager: _printJobManager),
+        builder: (context) =>
+            ModernPrintStatusScreen(jobManager: _printJobManager),
       ),
     );
   }
@@ -653,11 +782,10 @@ class _HomePageState extends State<HomePage> {
     try {
       // For this example, we'll use a PDF file from the assets folder
       // Make sure to add a PDF file to your assets and update the pubspec.yaml accordingly
-      final byteData = await rootBundle.load('assets/KAT_03_07_2024_18-Batches.pdf');
+      final byteData = await rootBundle.load('assets/Document.pdf');
       final tempDir = await getTemporaryDirectory();
       final tempFile = File('${tempDir.path}/temp.pdf');
       await tempFile.writeAsBytes(byteData.buffer.asUint8List());
-
       await _printJobManager.printPdf(tempFile.path);
       _showSnackBar('PDF printing started');
 
@@ -672,35 +800,125 @@ class _HomePageState extends State<HomePage> {
     try {
       _showSnackBar('Simple PDF created and printing started');
       // _pdfPrinter.createAndPrintSimplePdf();
-      _printJobManager.printImagePdf();
-      // Open the print status screen
+      final results = await createAndPrintSimplePdf();
+      final output = await getTemporaryDirectory();
+      final file = File('${output.path}/example.pdf');
+      await file.writeAsBytes(results);
+
+
+      // _printJobManager.printImagePdf(file.path);
       _openPrintStatusScreen();
+
+      // Open the print status screen
+
     } catch (e) {
       _showSnackBar('Failed to create and print simple PDF: $e');
     }
   }
+  Future<Uint8List> createAndPrintSimplePdf() async {
+    final pdf = pw.Document(
+    );
 
+    for (int i = 0; i < 1; i++) {
+      pdf.addPage(
+        index: 0,
+        pw.Page(
+          // pageFormat: const PdfPageFormat(42.0, 111),
+          // margin: const pw.EdgeInsets.only(top: 10),
+          build: (pw.Context context) {
+            return pw.Center(
+              child: pw.Container(
+                padding: const pw.EdgeInsets.all(20),
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: PdfColors.black, width: 2),
+                  borderRadius: pw.BorderRadius.circular(10),
+                ),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Center(
+                      child: pw.Text(
+                        'Train Ticket',
+                        style: pw.TextStyle(fontSize: 40, fontWeight: pw.FontWeight.bold),
+                      ),
+                    ),
+                    pw.SizedBox(height: 30),
+                    pw.Divider(thickness: 2),
+                    pw.SizedBox(height: 20),
+                    _buildInfoRow('Passenger Name:', 'Samuel Ssekizinvu'),
+                    _buildInfoRow('Departure Station:', 'Kampala'),
+                    _buildInfoRow('Arrival Station:', 'Nairobi'),
+                    _buildInfoRow('Departure Date:', '2022-12-25'),
+                    _buildInfoRow('Train Number:', '12345'),
+                    _buildInfoRow('Seat Number:', '12A'),
+                    _buildInfoRow('Fare:', 'UGX 100,000'),
+                    pw.SizedBox(height: 30),
+                    if (i == 0) ...[
+                      pw.Center(
+                        child: pw.BarcodeWidget(
+                          barcode: pw.Barcode.qrCode(),
+                          data: 'https://www.example.com/ticket/12345',
+                          width: 200,
+                          height: 200,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      );
+    }
+    return pdf.save();
+  }
+
+  pw.Widget _buildInfoRow(String label, String value) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 5),
+      child: pw.Row(
+        children: [
+          pw.Text(
+            label,
+            style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(width: 10),
+          pw.Text(
+            value,
+            style: const pw.TextStyle(fontSize: 20),
+          ),
+        ],
+      ),
+    );
+  }
   Future<void> _printPdf() async {
     try {
-      // For this example, we'll use a PDF file from the assets folder
-      // Make sure to add a PDF file to your assets and update the pubspec.yaml accordingly
-      final byteData = await rootBundle.load('assets/KAT_03_07_2024_18-Batches.pdf');
+      final byteData =
+          await rootBundle.load('assets/KAT_03_07_2024_18-Batches.pdf');
       final tempDir = await getTemporaryDirectory();
       final tempFile = File('${tempDir.path}/temp.pdf');
       await tempFile.writeAsBytes(byteData.buffer.asUint8List());
 
-      await _printJobManager.printPdf(tempFile.path);
-      //
-      // await _pdfPrinter.printPdf(tempFile.path);
-      // await _pdfPrinter.printImagePdf();
+
+
+        await _printJobManager.printPdf(tempFile.path);
+
       _showSnackBar('PDF printing started');
 
-      // Open the print status screen
       _openPrintStatusScreen();
     } catch (e) {
       _showSnackBar('Failed to print PDF: $e');
     }
   }
 
-
+  Widget pdfPreviewWidget(Future<Uint8List> pdfFuture) {
+    return PdfPreview(
+      build: (format) => pdfFuture,
+      canChangeOrientation: false,
+      canChangePageFormat: false,
+      canDebug: false,
+      actions: const <PdfPreviewAction>[],
+    );
+  }
 }

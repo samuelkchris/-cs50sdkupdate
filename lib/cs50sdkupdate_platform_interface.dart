@@ -223,4 +223,30 @@ abstract class Cs50sdkupdatePlatform extends PlatformInterface {
   Future<String?> printLabLocate(int step) {
     throw UnimplementedError('printLabLocate() has not been implemented.');
   }
+
+  Future<void> startMonitoringPrintJobs() {
+    throw UnimplementedError('startMonitoringPrintJobs() has not been implemented.');
+  }
+
+  Future<List<Map<String, dynamic>>> getAllPrintJobs() {
+    throw UnimplementedError('getAllPrintJobs() has not been implemented.');
+  }
+
+  Future<void> cancelPrintJob(String jobId) {
+    throw UnimplementedError('cancelPrintJob() has not been implemented.');
+  }
+
+  Future<void> restartPrintJob(String jobId) {
+    throw UnimplementedError('restartPrintJob() has not been implemented.');
+  }
+
+  Future<String?> printPdf(String pdfPath) {
+    throw UnimplementedError('printPdf() has not been implemented.');
+  }
+  Future<Map<String, dynamic>?> getPrintStats() async {
+    throw UnimplementedError('getPrintStats() has not been implemented.');
+  }
+  Future<void>cancelJob(String jobId) async {
+    throw UnimplementedError('cancleJob() has not been implemented.');
+  }
 }

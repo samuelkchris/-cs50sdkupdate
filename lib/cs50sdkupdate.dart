@@ -205,4 +205,34 @@ class Cs50sdkupdate {
   Future<String?> printLabLocate(int step) {
     return Cs50sdkupdatePlatform.instance.printLabLocate(step);
   }
+
+
+  Future<void> startMonitoringPrintJobs() {
+    return Cs50sdkupdatePlatform.instance.startMonitoringPrintJobs();
+  }
+
+  Future<List<Map<String, dynamic>>> getAllPrintJobs() {
+    return Cs50sdkupdatePlatform.instance.getAllPrintJobs();
+  }
+
+  Future<void> cancelPrintJob(String jobId) {
+    return Cs50sdkupdatePlatform.instance.cancelPrintJob(jobId);
+  }
+
+  Future<void> restartPrintJob(String jobId) {
+    return Cs50sdkupdatePlatform.instance.restartPrintJob(jobId);
+  }
+
+
+  Future<String?> printPdf(String pdfPath) {
+    return Cs50sdkupdatePlatform.instance.printPdf(pdfPath);
+  }
+  Future<Map<String, dynamic>?> getPrintStats() async {
+    return await Cs50sdkupdatePlatform.instance.getPrintStats();
+  }
+
+  Future<void>cancelJob(String jobId) async {
+    await Cs50sdkupdatePlatform.instance.cancelJob(jobId);
+  }
+
 }
