@@ -21,6 +21,8 @@ import androidx.annotation.NonNull;
 import com.ctk.sdk.ByteUtil;
 import com.ctk.sdk.PosApiHelper;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -683,35 +685,36 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
         @Override
         public void onWrite(PageRange[] pages, ParcelFileDescriptor destination,
                             CancellationSignal cancellationSignal, WriteResultCallback callback) {
-            InputStream input = null;
-            OutputStream output = null;
-            try {
-                input = new FileInputStream(filePath);
-                output = new FileOutputStream(destination.getFileDescriptor());
+            try (InputStream input = new BufferedInputStream(new FileInputStream(filePath));
+                 OutputStream output = new BufferedOutputStream(new FileOutputStream(destination.getFileDescriptor()))) {
 
-                byte[] buf = new byte[1024];
+                byte[] buffer = new byte[8192]; // Increased buffer size for better performance
+                long totalBytesWritten = 0;
                 int bytesRead;
-                while ((bytesRead = input.read(buf)) > 0) {
+
+                while ((bytesRead = input.read(buffer)) != -1) {
                     if (cancellationSignal.isCanceled()) {
                         callback.onWriteCancelled();
                         return;
                     }
-                    output.write(buf, 0, bytesRead);
+
+                    output.write(buffer, 0, bytesRead);
+                    totalBytesWritten += bytesRead;
+
+                    // Periodically flush to avoid excessive memory usage
+                    if (totalBytesWritten % (1024 * 1024) == 0) { // Flush every 1MB
+                        output.flush();
+                    }
                 }
+
+                output.flush(); // Final flush to ensure all data is written
 
                 callback.onWriteFinished(new PageRange[]{PageRange.ALL_PAGES});
                 totalPagesPrinted += pages.length;
             } catch (IOException e) {
                 callback.onWriteFailed(e.toString());
                 totalPagesUnprinted += pages.length;
-                Log.e("PrintPdf", "Error writing PDF: " + e.getMessage());
-            } finally {
-                try {
-                    if (input != null) input.close();
-                    if (output != null) output.close();
-                } catch (IOException e) {
-                    Log.e("PrintPdf", "Error closing streams: " + e.getMessage());
-                }
+                Log.e("PrintPdf", "Error writing PDF: " + e.getMessage(), e);
             }
         }
     }

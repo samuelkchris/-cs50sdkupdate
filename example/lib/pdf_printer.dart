@@ -1,12 +1,7 @@
 import 'dart:async';
-import 'dart:typed_data';
-import 'dart:ui' as ui;
 
 import 'package:cs50sdkupdate/cs50sdkupdate.dart';
-import 'package:flutter/services.dart';
-import 'package:image/image.dart' as img;
 import 'package:pdf_render/pdf_render.dart' as pdf_render;
-import 'package:printing/printing.dart';
 
 enum PrintStatus { pending, printing, printed, failed, cancelled }
 
@@ -87,23 +82,22 @@ class PrintJobManager {
 
     for (int i = 0; i < pageCount; i++) {
       try {
-          String? jobId = await _printPlugin.printPdf(pdfPath);
-          addPage('PDF Page ${i + 1}');
-          _pages.last['status'] = PrintStatus.printing;
-          _pages.last['jobId'] = jobId;
-          _activeJobs[jobId!] = JobStatus(
-            pages: 1,
-            copies: 1,
-            creationTime: DateTime.now(),
-            isBlocked: false,
-            isCancelled: false,
-            isCompleted: false,
-            isFailed: false,
-            isQueued: true,
-            isStarted: false,
-          );
-          notifyListeners();
-
+        String? jobId = await _printPlugin.printPdf(pdfPath);
+        addPage('PDF Page ${i + 1}');
+        _pages.last['status'] = PrintStatus.printing;
+        _pages.last['jobId'] = jobId;
+        _activeJobs[jobId!] = JobStatus(
+          pages: 1,
+          copies: 1,
+          creationTime: DateTime.now(),
+          isBlocked: false,
+          isCancelled: false,
+          isCompleted: false,
+          isFailed: false,
+          isQueued: true,
+          isStarted: false,
+        );
+        notifyListeners();
       } catch (e) {
         addPage('PDF Page ${i + 1}');
         _pages.last['status'] = PrintStatus.failed;
@@ -123,7 +117,8 @@ class PrintJobManager {
     try {
       final result = await _printPlugin.getPrintStats();
       if (result is Map) {
-        final Map<String, dynamic> stats = Map<String, dynamic>.from(result!.map((key, value) => MapEntry(key.toString(), value)));
+        final Map<String, dynamic> stats = Map<String, dynamic>.from(
+            result!.map((key, value) => MapEntry(key.toString(), value)));
         _totalPagesPrinted = stats['totalPagesPrinted'] as int? ?? 0;
         _totalPagesUnprinted = stats['totalPagesUnprinted'] as int? ?? 0;
 
@@ -132,18 +127,19 @@ class PrintJobManager {
           _activeJobs.clear();
           jobStatsRaw.forEach((key, value) {
             if (value is Map) {
-              final jobDetails = Map<String, dynamic>.from(value.map((k, v) => MapEntry(k.toString(), v)));
+              final jobDetails = Map<String, dynamic>.from(
+                  value.map((k, v) => MapEntry(k.toString(), v)));
               _activeJobs[key.toString()] = JobStatus(
                   pages: jobDetails['pages'] as int,
                   copies: jobDetails['copies'] as int,
-                  creationTime: DateTime.fromMillisecondsSinceEpoch(jobDetails['creationTime'] as int),
+                  creationTime: DateTime.fromMillisecondsSinceEpoch(
+                      jobDetails['creationTime'] as int),
                   isBlocked: jobDetails['isBlocked'] as bool? ?? false,
                   isCancelled: jobDetails['isCancelled'] as bool? ?? false,
                   isCompleted: jobDetails['isCompleted'] as bool? ?? false,
                   isFailed: jobDetails['isFailed'] as bool? ?? false,
                   isQueued: jobDetails['isQueued'] as bool? ?? false,
-                  isStarted: jobDetails['isStarted'] as bool? ?? false
-              );
+                  isStarted: jobDetails['isStarted'] as bool? ?? false);
             }
           });
         }
@@ -185,10 +181,8 @@ class PrintJobManager {
     _statsTimer?.cancel();
   }
 
-
   void notifyListeners() {
     // Notify listeners of state changes
-
   }
 
   int get totalPagesPrinted => _totalPagesPrinted;

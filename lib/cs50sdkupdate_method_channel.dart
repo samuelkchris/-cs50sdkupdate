@@ -396,7 +396,7 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
  Future<Map<String, dynamic>?> getPrintStats() async {
   try {
     final Map<dynamic, dynamic>? result = await methodChannel.invokeMethod<Map<dynamic, dynamic>>('GetPrintStats');
-    print("Result: $result");
+    // print("Result: $result");
 
     // Parsing the updated structure
     int totalPagesPrinted = result?['totalPagesPrinted'];
