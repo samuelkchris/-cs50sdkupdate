@@ -1,5 +1,7 @@
 package com.pinnisoft.cs50sdkupdate;
 
+import static android.content.ContentValues.TAG;
+
 import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.Context;
@@ -41,6 +43,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.embedding.engine.plugins.activity.ActivityAware;
@@ -55,13 +59,16 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
     private Context context;
     private Activity activity;
     private PrintManager printManager;
-    private final Map<String, PrintJob> activeJobs = new HashMap<>();
-    private final Map<String, Integer> retryCount = new HashMap<>();
-    private final Map<String, String> jobToPdfPath = new HashMap<>(); // New map to store PDF paths
+    private final Map<String, PrintJob> activeJobs = new ConcurrentHashMap<>();
+    private final Map<String, AtomicInteger> retryCount = new ConcurrentHashMap<>();
+    private final Map<String, String> jobToPdfPath = new ConcurrentHashMap<>();
+    private final AtomicInteger totalPagesPrinted = new AtomicInteger(0);
+    private final AtomicInteger totalPagesUnprinted = new AtomicInteger(0);
+    private static final String TAG = "PdfPrintPlugin";
     private static final int MAX_RETRY_ATTEMPTS = 3;
+    private static final int BUFFER_SIZE = 8192;
 
-    private int totalPagesPrinted = 0;
-    private int totalPagesUnprinted = 0;
+
 
     @Override
     public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
@@ -70,6 +77,7 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
         context = flutterPluginBinding.getApplicationContext();
     }
 
+    @TargetApi(Build.VERSION_CODES.KITKAT)
     @Override
     public void onAttachedToActivity(ActivityPluginBinding binding) {
         activity = binding.getActivity();
@@ -612,12 +620,11 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
             result.notImplemented();
         }
     }
-
     @TargetApi(Build.VERSION_CODES.KITKAT)
     private void printPdf(String pdfPath, Result result) {
         try {
             String jobName = "Document " + System.currentTimeMillis();
-            PrintDocumentAdapter pda = new PdfDocumentAdapter(context, pdfPath);
+            PrintDocumentAdapter pda = new PdfDocumentAdapter(pdfPath);
 
             PrintAttributes attributes = new PrintAttributes.Builder()
                     .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
@@ -628,11 +635,12 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
             PrintJob printJob = printManager.print(jobName, pda, attributes);
             String jobId = Objects.requireNonNull(printJob.getId()).toString();
             activeJobs.put(jobId, printJob);
-            retryCount.put(jobId, 0);
-            jobToPdfPath.put(jobId, pdfPath); // Store the PDF path
+            retryCount.put(jobId, new AtomicInteger(0));
+            jobToPdfPath.put(jobId, pdfPath);
 
             result.success(jobId);
         } catch (Exception e) {
+            Log.e(TAG, "Failed to start print job", e);
             result.error("PRINT_ERROR", "Failed to start print job: " + e.getMessage(), null);
         }
     }
@@ -642,9 +650,7 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
         PrintJob job = activeJobs.get(jobId);
         if (job != null) {
             job.cancel();
-            activeJobs.remove(jobId);
-            retryCount.remove(jobId);
-            jobToPdfPath.remove(jobId);
+            cleanupJob(jobId);
             result.success("Job cancelled");
         } else {
             result.error("JOB_NOT_FOUND", "No active job found with the given ID", null);
@@ -657,22 +663,19 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
         String pdfPath = jobToPdfPath.get(jobId);
         if (oldJob != null && pdfPath != null) {
             if (oldJob.isFailed() || oldJob.isCancelled()) {
-                int attempts = retryCount.get(jobId);
+                int attempts = retryCount.get(jobId).getAndIncrement();
                 if (attempts < MAX_RETRY_ATTEMPTS) {
-                    // Create a new print job with the same parameters
                     PrintJobInfo oldJobInfo = oldJob.getInfo();
-                    PrintDocumentAdapter pda = new PdfDocumentAdapter(context, pdfPath);
+                    PrintDocumentAdapter pda = new PdfDocumentAdapter(pdfPath);
                     PrintAttributes attributes = oldJobInfo.getAttributes();
 
                     PrintJob newJob = printManager.print(oldJobInfo.getLabel(), pda, attributes);
                     String newJobId = Objects.requireNonNull(newJob.getId()).toString();
 
-                    // Update job tracking
-                    activeJobs.remove(jobId);
+                    cleanupJob(jobId);
                     activeJobs.put(newJobId, newJob);
-                    retryCount.put(newJobId, attempts + 1);
+                    retryCount.put(newJobId, new AtomicInteger(attempts + 1));
                     jobToPdfPath.put(newJobId, pdfPath);
-                    jobToPdfPath.remove(jobId);
 
                     result.success(newJobId);
                 } else {
@@ -689,8 +692,8 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
     @TargetApi(Build.VERSION_CODES.KITKAT)
     private void getPrintStats(Result result) {
         Map<String, Object> stats = new HashMap<>();
-        stats.put("totalPagesPrinted", totalPagesPrinted);
-        stats.put("totalPagesUnprinted", totalPagesUnprinted);
+        stats.put("totalPagesPrinted", totalPagesPrinted.get());
+        stats.put("totalPagesUnprinted", totalPagesUnprinted.get());
 
         Map<String, Object> jobStats = new HashMap<>();
         for (Map.Entry<String, PrintJob> entry : activeJobs.entrySet()) {
@@ -708,7 +711,7 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
             jobDetails.put("isFailed", job.isFailed());
             jobDetails.put("isQueued", job.isQueued());
             jobDetails.put("isStarted", job.isStarted());
-            jobDetails.put("retryCount", retryCount.get(jobId));
+            jobDetails.put("retryCount", retryCount.get(jobId).get());
 
             jobStats.put(jobId, jobDetails);
         }
@@ -717,14 +720,17 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
         result.success(stats);
     }
 
-
+    private void cleanupJob(String jobId) {
+        activeJobs.remove(jobId);
+        retryCount.remove(jobId);
+        jobToPdfPath.remove(jobId);
+    }
 
     @TargetApi(Build.VERSION_CODES.KITKAT)
     private class PdfDocumentAdapter extends PrintDocumentAdapter {
-        private String filePath;
-        private PrintDocumentInfo pdi;
+        private final String filePath;
 
-        PdfDocumentAdapter(Context context, String filePath) {
+        PdfDocumentAdapter(String filePath) {
             this.filePath = filePath;
         }
 
@@ -738,9 +744,9 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
                 return;
             }
 
-            pdi = new PrintDocumentInfo.Builder("file name")
+            PrintDocumentInfo pdi = new PrintDocumentInfo.Builder("file name")
                     .setContentType(PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
-                    .setPageCount(PrintDocumentInfo.PARCELABLE_WRITE_RETURN_VALUE)
+                    .setPageCount(PrintDocumentInfo.PAGE_COUNT_UNKNOWN)
                     .build();
 
             callback.onLayoutFinished(pdi, !oldAttributes.equals(newAttributes));
@@ -753,9 +759,9 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
             try (InputStream input = new BufferedInputStream(new FileInputStream(filePath));
                  OutputStream output = new BufferedOutputStream(new FileOutputStream(destination.getFileDescriptor()))) {
 
-                byte[] buffer = new byte[8192]; // Increased buffer size for better performance
-                long totalBytesWritten = 0;
+                byte[] buffer = new byte[BUFFER_SIZE];
                 int bytesRead;
+                long totalBytesWritten = 0;
 
                 while ((bytesRead = input.read(buffer)) != -1) {
                     if (cancellationSignal.isCanceled()) {
@@ -766,23 +772,22 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
                     output.write(buffer, 0, bytesRead);
                     totalBytesWritten += bytesRead;
 
-                    // Periodically flush to avoid excessive memory usage
-                    if (totalBytesWritten % (1024 * 1024) == 0) { // Flush every 1MB
+                    if (totalBytesWritten % (1024 * 1024) == 0) {
                         output.flush();
                     }
                 }
 
-                output.flush(); // Final flush to ensure all data is written
-
+                output.flush();
                 callback.onWriteFinished(new PageRange[]{PageRange.ALL_PAGES});
-                totalPagesPrinted += pages.length;
+                totalPagesPrinted.addAndGet(pages.length);
             } catch (IOException e) {
+                Log.e(TAG, "Error writing PDF", e);
                 callback.onWriteFailed(e.toString());
-                totalPagesUnprinted += pages.length;
-                Log.e("PrintPdf", "Error writing PDF: " + e.getMessage(), e);
+                totalPagesUnprinted.addAndGet(pages.length);
             }
         }
     }
+
 
     @Override
     public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
