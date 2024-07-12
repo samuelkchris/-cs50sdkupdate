@@ -12,6 +12,8 @@ import android.graphics.pdf.PdfRenderer;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.CancellationSignal;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.ParcelFileDescriptor;
 import android.print.PageRange;
 import android.print.PrintAttributes;
@@ -42,6 +44,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.embedding.engine.plugins.activity.ActivityAware;
@@ -804,8 +808,9 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
         }
 
         private int countPages(byte[] buffer, int bytesRead) {
-            // Implement your page counting logic here
-            // This is a placeholder and should be replaced with actual logic
+            // Hypothetical page counting
+
+
             return 1;
         }
     }
