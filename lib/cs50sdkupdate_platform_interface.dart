@@ -249,4 +249,8 @@ abstract class Cs50sdkupdatePlatform extends PlatformInterface {
   Future<void>cancelJob(String jobId) async {
     throw UnimplementedError('cancleJob() has not been implemented.');
   }
+
+  Future<String> retryPrintJob(String jobId) async {
+    throw UnimplementedError('retryPrintJob() has not been implemented.');
+  }
 }

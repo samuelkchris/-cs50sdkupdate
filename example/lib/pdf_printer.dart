@@ -1,7 +1,6 @@
 import 'dart:async';
 
-import 'package:cs50sdkupdate/cs50sdkupdate.dart';
-import 'package:pdf_render/pdf_render.dart' as pdf_render;
+import 'package:cs50sdkupdate/cs50sdkupdate.dart';import 'package:pdf_render/pdf_render.dart' as pdf_render;
 
 enum PrintStatus { pending, printing, printed, failed, cancelled }
 
@@ -71,8 +70,33 @@ class PrintJobManager {
     for (int i = 0; i < _pages.length; i++) {
       if (_pages[i]['status'] == PrintStatus.failed ||
           _pages[i]['status'] == PrintStatus.cancelled) {
-        await _printPage(i);
+        await _retryJob(i);
       }
+    }
+  }
+
+  Future<void> _retryJob(int index) async {
+    String? oldJobId = _pages[index]['jobId'];
+    if (oldJobId != null) {
+      try {
+        String? newJobId = await _printPlugin.retryPrintJob(oldJobId);
+        if (newJobId != null) {
+          _pages[index]['status'] = PrintStatus.printing;
+          _pages[index]['jobId'] = newJobId;
+          _activeJobs[newJobId] = _activeJobs[oldJobId]!;
+          _activeJobs.remove(oldJobId);
+          notifyListeners();
+        } else {
+          throw Exception('Failed to retry job');
+        }
+      } catch (e) {
+        print('Error retrying job for page $index: $e');
+        _pages[index]['status'] = PrintStatus.failed;
+        notifyListeners();
+      }
+    } else {
+      // If there's no job ID, try to print the page again
+      await _printPage(index);
     }
   }
 

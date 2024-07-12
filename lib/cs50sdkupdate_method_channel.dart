@@ -393,6 +393,17 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
   }
 
   @override
+  Future<String> retryPrintJob(String jobId) async {
+    try {
+      final String? newJobId = await methodChannel.invokeMethod<String>('RetryJob', {'jobId': jobId});
+      return newJobId!;
+    } on PlatformException catch (e) {
+      print('Error retrying print job: ${e.message}');
+      return "null";
+    }
+  }
+
+  @override
  Future<Map<String, dynamic>?> getPrintStats() async {
   try {
     final Map<dynamic, dynamic>? result = await methodChannel.invokeMethod<Map<dynamic, dynamic>>('GetPrintStats');

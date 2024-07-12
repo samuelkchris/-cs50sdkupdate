@@ -1,9 +1,15 @@
 package com.pinnisoft.cs50sdkupdate;
 
+import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.pdf.PdfDocument;
+import android.graphics.pdf.PdfRenderer;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.CancellationSignal;
 import android.os.ParcelFileDescriptor;
@@ -14,6 +20,7 @@ import android.print.PrintDocumentInfo;
 import android.print.PrintJob;
 import android.print.PrintJobInfo;
 import android.print.PrintManager;
+import android.print.pdf.PrintedPdfDocument;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -23,6 +30,7 @@ import com.ctk.sdk.PosApiHelper;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -32,6 +40,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.embedding.engine.plugins.activity.ActivityAware;
@@ -46,7 +55,11 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
     private Context context;
     private Activity activity;
     private PrintManager printManager;
-    private Map<String, PrintJob> activeJobs = new HashMap<>();
+    private final Map<String, PrintJob> activeJobs = new HashMap<>();
+    private final Map<String, Integer> retryCount = new HashMap<>();
+    private final Map<String, String> jobToPdfPath = new HashMap<>(); // New map to store PDF paths
+    private static final int MAX_RETRY_ATTEMPTS = 3;
+
     private int totalPagesPrinted = 0;
     private int totalPagesUnprinted = 0;
 
@@ -75,7 +88,7 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
             int pic = posApiHelper.PiccOpen();
             if (ret == 0 && pic == 0) {
                 posApiHelper.SysBeep();
-                result.success("Android " + android.os.Build.VERSION.RELEASE + ", SDK Version: " + new String(version) + ", Picc opened");
+                result.success("Android " + Build.VERSION.RELEASE + ", SDK Version: " + new String(version) + ", Picc opened");
             } else {
                 result.error("ERROR", "Failed to get SDK version or open picc", null);
             }
@@ -586,19 +599,25 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
             } else {
                 result.error("INVALID_ARGUMENTS", "Missing jobId", null);
             }
+        } else if (call.method.equals("RetryJob")) {
+            String jobId = call.argument("jobId");
+            if (jobId != null) {
+                retryJob(jobId, result);
+            } else {
+                result.error("INVALID_ARGUMENTS", "Missing jobId", null);
+            }
         } else if (call.method.equals("GetPrintStats")) {
             getPrintStats(result);
         } else {
             result.notImplemented();
         }
-
     }
 
-
+    @TargetApi(Build.VERSION_CODES.KITKAT)
     private void printPdf(String pdfPath, Result result) {
         try {
             String jobName = "Document " + System.currentTimeMillis();
-            PrintDocumentAdapter pda = new CustomPrintDocumentAdapter(pdfPath);
+            PrintDocumentAdapter pda = new PdfDocumentAdapter(context, pdfPath);
 
             PrintAttributes attributes = new PrintAttributes.Builder()
                     .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
@@ -607,24 +626,67 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
                     .build();
 
             PrintJob printJob = printManager.print(jobName, pda, attributes);
-            String jobId = printJob.getId().toString();
+            String jobId = Objects.requireNonNull(printJob.getId()).toString();
             activeJobs.put(jobId, printJob);
+            retryCount.put(jobId, 0);
+            jobToPdfPath.put(jobId, pdfPath); // Store the PDF path
 
             result.success(jobId);
         } catch (Exception e) {
             result.error("PRINT_ERROR", "Failed to start print job: " + e.getMessage(), null);
         }
     }
+
+    @TargetApi(Build.VERSION_CODES.KITKAT)
     private void cancelJob(String jobId, Result result) {
         PrintJob job = activeJobs.get(jobId);
         if (job != null) {
             job.cancel();
             activeJobs.remove(jobId);
+            retryCount.remove(jobId);
+            jobToPdfPath.remove(jobId);
             result.success("Job cancelled");
         } else {
             result.error("JOB_NOT_FOUND", "No active job found with the given ID", null);
         }
     }
+
+    @TargetApi(Build.VERSION_CODES.KITKAT)
+    private void retryJob(String jobId, Result result) {
+        PrintJob oldJob = activeJobs.get(jobId);
+        String pdfPath = jobToPdfPath.get(jobId);
+        if (oldJob != null && pdfPath != null) {
+            if (oldJob.isFailed() || oldJob.isCancelled()) {
+                int attempts = retryCount.get(jobId);
+                if (attempts < MAX_RETRY_ATTEMPTS) {
+                    // Create a new print job with the same parameters
+                    PrintJobInfo oldJobInfo = oldJob.getInfo();
+                    PrintDocumentAdapter pda = new PdfDocumentAdapter(context, pdfPath);
+                    PrintAttributes attributes = oldJobInfo.getAttributes();
+
+                    PrintJob newJob = printManager.print(oldJobInfo.getLabel(), pda, attributes);
+                    String newJobId = Objects.requireNonNull(newJob.getId()).toString();
+
+                    // Update job tracking
+                    activeJobs.remove(jobId);
+                    activeJobs.put(newJobId, newJob);
+                    retryCount.put(newJobId, attempts + 1);
+                    jobToPdfPath.put(newJobId, pdfPath);
+                    jobToPdfPath.remove(jobId);
+
+                    result.success(newJobId);
+                } else {
+                    result.error("MAX_RETRIES_REACHED", "Maximum retry attempts reached for this job", null);
+                }
+            } else {
+                result.error("JOB_NOT_FAILED", "Cannot retry a job that hasn't failed or been cancelled", null);
+            }
+        } else {
+            result.error("JOB_NOT_FOUND", "No active job found with the given ID", null);
+        }
+    }
+
+    @TargetApi(Build.VERSION_CODES.KITKAT)
     private void getPrintStats(Result result) {
         Map<String, Object> stats = new HashMap<>();
         stats.put("totalPagesPrinted", totalPagesPrinted);
@@ -637,7 +699,6 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
             PrintJobInfo jobInfo = job.getInfo();
 
             Map<String, Object> jobDetails = new HashMap<>();
-//            jobDetails.put("state", getJobStateString(job.getState()));
             jobDetails.put("pages", jobInfo.getPages() != null ? jobInfo.getPages().length : 0);
             jobDetails.put("copies", jobInfo.getCopies());
             jobDetails.put("creationTime", jobInfo.getCreationTime());
@@ -647,6 +708,7 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
             jobDetails.put("isFailed", job.isFailed());
             jobDetails.put("isQueued", job.isQueued());
             jobDetails.put("isStarted", job.isStarted());
+            jobDetails.put("retryCount", retryCount.get(jobId));
 
             jobStats.put(jobId, jobDetails);
         }
@@ -657,14 +719,16 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
 
 
 
-    private class CustomPrintDocumentAdapter extends PrintDocumentAdapter {
-        private String filePath;
+    @TargetApi(Build.VERSION_CODES.KITKAT)
+    private class PdfDocumentAdapter extends PrintDocumentAdapter {
+        private final String filePath;
         private PrintDocumentInfo pdi;
 
-        CustomPrintDocumentAdapter(String filePath) {
+        PdfDocumentAdapter(Context context, String filePath) {
             this.filePath = filePath;
         }
 
+        @TargetApi(Build.VERSION_CODES.KITKAT)
         @Override
         public void onLayout(PrintAttributes oldAttributes, PrintAttributes newAttributes,
                              CancellationSignal cancellationSignal, LayoutResultCallback callback,
@@ -676,12 +740,13 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
 
             pdi = new PrintDocumentInfo.Builder("file name")
                     .setContentType(PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
-                    .setPageCount(PrintDocumentInfo.PAGE_COUNT_UNKNOWN)
+                    .setPageCount(PrintDocumentInfo.PARCELABLE_WRITE_RETURN_VALUE)
                     .build();
 
             callback.onLayoutFinished(pdi, !oldAttributes.equals(newAttributes));
         }
 
+        @TargetApi(Build.VERSION_CODES.KITKAT)
         @Override
         public void onWrite(PageRange[] pages, ParcelFileDescriptor destination,
                             CancellationSignal cancellationSignal, WriteResultCallback callback) {

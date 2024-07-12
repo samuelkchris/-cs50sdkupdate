@@ -349,6 +349,12 @@ class MockCs50sdkupdatePlatform
     throw UnimplementedError();
   }
 
+  @override
+  Future<String> retryPrintJob(String jobId) {
+    // TODO: implement retryPrintJob
+    throw UnimplementedError();
+  }
+
   
 }
 

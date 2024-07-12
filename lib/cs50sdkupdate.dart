@@ -234,5 +234,7 @@ class Cs50sdkupdate {
   Future<void>cancelJob(String jobId) async {
     await Cs50sdkupdatePlatform.instance.cancelJob(jobId);
   }
-
+  Future<String> retryPrintJob(String jobId) async {
+    return await Cs50sdkupdatePlatform.instance.retryPrintJob(jobId);
+  }
 }
