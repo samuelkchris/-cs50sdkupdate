@@ -12,8 +12,6 @@ import android.graphics.pdf.PdfRenderer;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.CancellationSignal;
-import android.os.Handler;
-import android.os.Looper;
 import android.os.ParcelFileDescriptor;
 import android.print.PageRange;
 import android.print.PrintAttributes;
@@ -38,14 +36,11 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.embedding.engine.plugins.activity.ActivityAware;
@@ -632,16 +627,15 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
 
             PrintJob printJob = printManager.print(jobName, pda, attributes);
             String jobId = Objects.requireNonNull(printJob.getId()).toString();
-            activeJobs.put(jobId, new WeakReference<>(printJob).get());
+            activeJobs.put(jobId, printJob);
             retryCount.put(jobId, 0);
-            jobToPdfPath.put(jobId, pdfPath);
+            jobToPdfPath.put(jobId, pdfPath); // Store the PDF path
 
             result.success(jobId);
         } catch (Exception e) {
             result.error("PRINT_ERROR", "Failed to start print job: " + e.getMessage(), null);
         }
     }
-
 
     @TargetApi(Build.VERSION_CODES.KITKAT)
     private void cancelJob(String jobId, Result result) {
@@ -725,18 +719,16 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
 
 
 
-
     @TargetApi(Build.VERSION_CODES.KITKAT)
     private class PdfDocumentAdapter extends PrintDocumentAdapter {
-        private final WeakReference<Context> contextRef;
-        private final String filePath;
+        private String filePath;
         private PrintDocumentInfo pdi;
 
         PdfDocumentAdapter(Context context, String filePath) {
-            this.contextRef = new WeakReference<>(context);
             this.filePath = filePath;
         }
 
+        @TargetApi(Build.VERSION_CODES.KITKAT)
         @Override
         public void onLayout(PrintAttributes oldAttributes, PrintAttributes newAttributes,
                              CancellationSignal cancellationSignal, LayoutResultCallback callback,
@@ -748,70 +740,47 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
 
             pdi = new PrintDocumentInfo.Builder("file name")
                     .setContentType(PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
-                    .setPageCount(PrintDocumentInfo.PAGE_COUNT_UNKNOWN)
+                    .setPageCount(PrintDocumentInfo.PARCELABLE_WRITE_RETURN_VALUE)
                     .build();
 
             callback.onLayoutFinished(pdi, !oldAttributes.equals(newAttributes));
         }
 
+        @TargetApi(Build.VERSION_CODES.KITKAT)
         @Override
         public void onWrite(PageRange[] pages, ParcelFileDescriptor destination,
                             CancellationSignal cancellationSignal, WriteResultCallback callback) {
-            ExecutorService executor = Executors.newSingleThreadExecutor();
-            Handler handler = new Handler(Looper.getMainLooper());
+            try (InputStream input = new BufferedInputStream(new FileInputStream(filePath));
+                 OutputStream output = new BufferedOutputStream(new FileOutputStream(destination.getFileDescriptor()))) {
 
-            executor.execute(() -> {
-                InputStream input = null;
-                OutputStream output = null;
-                try {
-                    input = new BufferedInputStream(new FileInputStream(filePath));
-                    output = new BufferedOutputStream(new FileOutputStream(destination.getFileDescriptor()));
+                byte[] buffer = new byte[8192]; // Increased buffer size for better performance
+                long totalBytesWritten = 0;
+                int bytesRead;
 
-                    byte[] buffer = new byte[8192];
-                    int bytesRead;
-                    int pageCount = 0;
-
-                    while ((bytesRead = input.read(buffer)) != -1) {
-                        if (cancellationSignal.isCanceled()) {
-                            handler.post(() -> callback.onWriteCancelled());
-                            return;
-                        }
-
-                        output.write(buffer, 0, bytesRead);
-
-                        // Hypothetical page counting logic
-                        pageCount += countPages(buffer, bytesRead);
+                while ((bytesRead = input.read(buffer)) != -1) {
+                    if (cancellationSignal.isCanceled()) {
+                        callback.onWriteCancelled();
+                        return;
                     }
 
-                    int finalPageCount = pageCount;
-                    handler.post(() -> {
-                        callback.onWriteFinished(new PageRange[]{PageRange.ALL_PAGES});
-                        totalPagesPrinted += finalPageCount;
-                    });
-                } catch (IOException e) {
-                    handler.post(() -> {
-                        callback.onWriteFailed(e.toString());
-                        totalPagesUnprinted += pages.length;
-                        Log.e("PrintPdf", "Error writing PDF: " + e.getMessage(), e);
-                    });
-                } finally {
-                    try {
-                        if (input != null) input.close();
-                        if (output != null) output.close();
-                    } catch (IOException e) {
-                        Log.e("PrintPdf", "Error closing streams: " + e.getMessage(), e);
+                    output.write(buffer, 0, bytesRead);
+                    totalBytesWritten += bytesRead;
+
+                    // Periodically flush to avoid excessive memory usage
+                    if (totalBytesWritten % (1024 * 1024) == 0) { // Flush every 1MB
+                        output.flush();
                     }
                 }
-            });
 
-            executor.shutdown();
-        }
+                output.flush(); // Final flush to ensure all data is written
 
-        private int countPages(byte[] buffer, int bytesRead) {
-            // Hypothetical page counting
-
-
-            return 1;
+                callback.onWriteFinished(new PageRange[]{PageRange.ALL_PAGES});
+                totalPagesPrinted += pages.length;
+            } catch (IOException e) {
+                callback.onWriteFailed(e.toString());
+                totalPagesUnprinted += pages.length;
+                Log.e("PrintPdf", "Error writing PDF: " + e.getMessage(), e);
+            }
         }
     }
 
