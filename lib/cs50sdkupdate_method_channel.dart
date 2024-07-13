@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:typed_data' as typed_data;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'cs50sdkupdate.dart';
 import 'cs50sdkupdate_platform_interface.dart';
 
 /// An implementation of [Cs50sdkupdatePlatform] that uses method channels.
@@ -10,6 +12,26 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
   /// The method channel used to interact with the native platform.
   @visibleForTesting
   final methodChannel = const MethodChannel('cs50sdkupdate');
+
+  final StreamController<Map<String, int>> _progressController = StreamController<Map<String, int>>.broadcast();
+
+  @override
+  Future<void> initialize() async {
+    methodChannel.setMethodCallHandler(_handleMethodCall);
+  }
+
+  Future<void> _handleMethodCall(MethodCall call) async {
+    switch (call.method) {
+      case 'updateProgress':
+        final Map<String, int> progress = Map<String, int>.from(call.arguments);
+        _progressController.add(progress);
+        break;
+      default:
+        throw MissingPluginException('notImplemented');
+    }
+  }
+
+  Stream<Map<String, int>> get printProgressStream => _progressController.stream;
 
   @override
   Future<String?> getPlatformVersion() async {
@@ -441,19 +463,4 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
   }
 }
 
-@override
-Future<void> updatePrintProgress(int currentPage, int totalPages, int bytesWritten) async {
-  try {
-    final Map<String, dynamic> args = <String, dynamic>{
-      'currentPage': currentPage,
-      'totalPages': totalPages,
-      'bytesWritten': bytesWritten,
-    };
-
-    print("Updating print progress: $args");
-    await methodChannel.invokeMethod<void>('updatePrintProgress', args);
-  } catch (e) {
-    print('Failed to update print progress: $e');
-  }
-}
 }

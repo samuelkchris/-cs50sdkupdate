@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:cs50sdkupdate/cs50sdkupdate.dart';
 import 'package:cs50sdkupdate_example/pdf_printer.dart';
-import 'package:cs50sdkupdate_example/print_status_screen.dart';
+import 'package:cs50sdkupdate_example/progress.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
@@ -770,29 +770,45 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _openPrintStatusScreen() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) =>
-            ModernPrintStatusScreen(jobManager: _printJobManager),
-      ),
-    );
+    // ModernPrintStatusScreen(jobManager: _printJobManager),
+    // ),
+    // );
   }
 
   Future<void> _printExistingPdf() async {
     try {
       // For this example, we'll use a PDF file from the assets folder
       // Make sure to add a PDF file to your assets and update the pubspec.yaml accordingly
-      final byteData = await rootBundle.load('assets/KAT_03_07_2024_18-Batches.pdf');
+      final byteData =
+          await rootBundle.load('assets/KAT_03_07_2024_18-Batches.pdf');
       final tempDir = await getTemporaryDirectory();
       final tempFile = File('${tempDir.path}/temp.pdf');
       await tempFile.writeAsBytes(byteData.buffer.asUint8List());
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return Dialog(
+            child: StatefulBuilder(
+              builder: (BuildContext context, StateSetter setState) {
+                return PrintProgressWidget(
+                  pdfPath: tempFile.path,
+                  onPrintComplete: (String message) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(message)),
+                    );
+                  },
+                );
+              },
+            ),
+          );
+        },
+      );
 
-      await _printJobManager.printPdf(tempFile.path);
-      _showSnackBar('PDF printing started');
-
-      // Open the print status screen
-      _openPrintStatusScreen();
+      // await _printJobManager.printPdf(tempFile.path);
+      // _showSnackBar('PDF printing started');
+      //
+      // // Open the print status screen
+      // _openPrintStatusScreen();
     } catch (e) {
       _showSnackBar('Failed to print PDF: $e');
     }

@@ -1,8 +1,30 @@
+import 'dart:async';
 import 'dart:typed_data';
 
+import 'cs50sdkupdate_method_channel.dart';
 import 'cs50sdkupdate_platform_interface.dart';
 
 class Cs50sdkupdate {
+
+  final _progressController = StreamController<Map<String, int>>.broadcast();
+
+  Stream<Map<String, int>> get progressStream => _progressController.stream;
+
+  Future<void> initialize() async {
+    await MethodChannelCs50sdkupdate().initialize();
+  }
+
+  void updateProgress(int currentPage, int totalPages) {
+    _progressController.add({
+      'currentPage': currentPage,
+      'totalPages': totalPages,
+    });
+  }
+
+  void dispose() {
+    _progressController.close();
+  }
+
   Future<String?> getPlatformVersion() {
     return Cs50sdkupdatePlatform.instance.getPlatformVersion();
   }
@@ -252,9 +274,18 @@ class Cs50sdkupdate {
     return await Cs50sdkupdatePlatform.instance.retryPrintJob(jobId);
   }
 
-  Future<void> updatePrintProgress(
-      int currentPage, int totalPages, int bytesWritten) async {
-    await Cs50sdkupdatePlatform.instance
-        .updatePrintProgress(currentPage, totalPages, bytesWritten);
+  Future<String?> updatePrintProgress(int currentPage, int totalPages) async {
+    try {
+      final String? result = await Cs50sdkupdatePlatform.instance
+          .updatePrintProgress(currentPage, totalPages);
+      return result;
+    } catch (e) {
+      print('Failed to update print progress: $e');
+      return null;
+    }
+  }
+
+  Stream<Map<String, dynamic>> get printProgressStream {
+    return (Cs50sdkupdatePlatform.instance as MethodChannelCs50sdkupdate).printProgressStream;
   }
 }

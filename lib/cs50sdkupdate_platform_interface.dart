@@ -266,8 +266,13 @@ abstract class Cs50sdkupdatePlatform extends PlatformInterface {
     throw UnimplementedError('retryPrintJob() has not been implemented.');
   }
 
-  Future<void> updatePrintProgress(int currentPage, int totalPages,
-      int bytesWritten) async {
-    throw UnimplementedError('updatePrintProgress() has not been implemented.');
+Future<String?> updatePrintProgress(int currentPage, int totalPages) async {
+  throw UnimplementedError('updatePrintProgress() has not been implemented.');
+}
+
+  Future<void> initialize() async {
+    throw UnimplementedError('initialize() has not been implemented.');
   }
+
+
 }

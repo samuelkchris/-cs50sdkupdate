@@ -6,7 +6,6 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.ColorMatrix;
 import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Matrix;
@@ -16,6 +15,8 @@ import android.graphics.pdf.PdfRenderer;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.CancellationSignal;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.ParcelFileDescriptor;
 import android.print.PageRange;
 import android.print.PrintAttributes;
@@ -74,6 +75,8 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
     private static final int BUFFER_SIZE = 8192;
     private final Map<String, PdfDocumentAdapter> activeAdapters = new HashMap<>();
     private PosApiHelper posApiHelper;
+    private int currentPage = 0;
+    private int totalPages = 0;
 
     @Override
     public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
@@ -81,6 +84,7 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
         channel.setMethodCallHandler(this);
         context = flutterPluginBinding.getApplicationContext();
         posApiHelper = PosApiHelper.getInstance();
+
 
     }
 
@@ -108,6 +112,10 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
             } else {
                 result.error("ERROR", "Failed to get SDK version or open picc", null);
             }
+        } else if (call.method.equals("printProgress")) {
+            int currentPage = call.argument("currentPage");
+            int totalPages = call.argument("totalPages");
+            result.success("Current Page: " + currentPage + ", Total Pages: " + totalPages);
         } else if (call.method.equals("openPicc")) {
 
             int pic = posApiHelper.PiccOpen();
@@ -642,7 +650,8 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
 
             ParcelFileDescriptor fileDescriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
             PdfRenderer renderer = new PdfRenderer(fileDescriptor);
-            Log.d(TAG, "PdfRenderer created successfully. Page count: " + renderer.getPageCount());
+            int totalPages = renderer.getPageCount();
+            Log.d(TAG, "PdfRenderer created successfully. Page count: " + totalPages);
 
             // Initialize printer
             int ret = posApiHelper.PrintInit();
@@ -663,7 +672,7 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
             int tileWidth = 384;
             int tileHeight = 984;
 
-            for (int i = 0; i < renderer.getPageCount(); i++) {
+            for (int i = 0; i < totalPages; i++) {
                 PdfRenderer.Page page = renderer.openPage(i);
 
                 int pageWidth = page.getWidth();
@@ -712,6 +721,10 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
                 posApiHelper.PrintStep(50);
 
                 page.close();
+
+                // Send progress update to Flutter side
+                int currentPage = i + 1;
+                sendProgressUpdate(currentPage, totalPages);
             }
 
             // Start printing
@@ -737,6 +750,61 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
         }
     }
 
+
+    private void sendProgressUpdate(int currentPage, int totalPages) {
+        this.currentPage = currentPage;
+        this.totalPages = totalPages;
+        if (channel != null) {
+            Map<String, Object> progressMap = new HashMap<>();
+            progressMap.put("currentPage", currentPage);
+            progressMap.put("totalPages", totalPages);
+            progressMap.put("method", "printProgress");
+
+            Log.d(TAG, "Sending progress update: " + currentPage + "/" + totalPages);
+
+            new Handler(Looper.getMainLooper()).post(() -> channel.invokeMethod("printProgress", progressMap));
+        }
+    }
+
+    @TargetApi(Build.VERSION_CODES.KITKAT)
+    private void getPrintStats(Result result) {
+        Map<String, Object> stats = new HashMap<>();
+
+        Map<String, Object> progressMap = new HashMap<>();
+        progressMap.put("currentPage", this.currentPage);
+        progressMap.put("totalPages", this.totalPages);
+        progressMap.put("method", "printProgress");
+        stats.put("progress", progressMap);
+
+        Map<String, Object> jobStats = new HashMap<>();
+        if (activeJobs != null) {
+            for (Map.Entry<String, PrintJob> entry : activeJobs.entrySet()) {
+                String jobId = entry.getKey();
+                PrintJob job = entry.getValue();
+                PrintJobInfo jobInfo = job.getInfo();
+
+                Map<String, Object> jobDetails = new HashMap<>();
+                jobDetails.put("pages", jobInfo.getPages() != null ? jobInfo.getPages().length : 0);
+                jobDetails.put("copies", jobInfo.getCopies());
+                jobDetails.put("creationTime", jobInfo.getCreationTime());
+                jobDetails.put("isBlocked", job.isBlocked());
+                jobDetails.put("isCancelled", job.isCancelled());
+                jobDetails.put("isCompleted", job.isCompleted());
+                jobDetails.put("isFailed", job.isFailed());
+                jobDetails.put("isQueued", job.isQueued());
+                jobDetails.put("isStarted", job.isStarted());
+                // Safely handle potential null values for retryCount
+                AtomicInteger retryCounter = retryCount.get(jobId);
+                jobDetails.put("retryCount", retryCounter != null ? retryCounter.get() : 0);
+
+                jobStats.put(jobId, jobDetails);
+            }
+        }
+
+        stats.put("jobs", jobStats);
+        result.success(stats);
+    }
+
     @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)
     private Bitmap enhanceBitmapForThermalPrinting(Bitmap original) {
         Bitmap output = Bitmap.createBitmap(original.getWidth(), original.getHeight(), original.getConfig());
@@ -748,7 +816,7 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
 
         float[] sharpening = {
                 -1, -1, -1,
-                -1,  9, -1,
+                -1, 9, -1,
                 -1, -1, -1
         };
         convolution.setCoefficients(sharpening);
@@ -845,41 +913,7 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
         }
     }
 
-    @TargetApi(Build.VERSION_CODES.KITKAT)
-    private void getPrintStats(Result result) {
-        Map<String, Object> stats = new HashMap<>();
-        // Safely handle potential null values with a default value
-        stats.put("totalPagesPrinted", totalPagesPrinted != null ? totalPagesPrinted.get() : 0);
-        stats.put("totalPagesUnprinted", totalPagesUnprinted != null ? totalPagesUnprinted.get() : 0);
 
-        Map<String, Object> jobStats = new HashMap<>();
-        if (activeJobs != null) {
-            for (Map.Entry<String, PrintJob> entry : activeJobs.entrySet()) {
-                String jobId = entry.getKey();
-                PrintJob job = entry.getValue();
-                PrintJobInfo jobInfo = job.getInfo();
-
-                Map<String, Object> jobDetails = new HashMap<>();
-                jobDetails.put("pages", jobInfo.getPages() != null ? jobInfo.getPages().length : 0);
-                jobDetails.put("copies", jobInfo.getCopies());
-                jobDetails.put("creationTime", jobInfo.getCreationTime());
-                jobDetails.put("isBlocked", job.isBlocked());
-                jobDetails.put("isCancelled", job.isCancelled());
-                jobDetails.put("isCompleted", job.isCompleted());
-                jobDetails.put("isFailed", job.isFailed());
-                jobDetails.put("isQueued", job.isQueued());
-                jobDetails.put("isStarted", job.isStarted());
-                // Safely handle potential null values for retryCount
-                AtomicInteger retryCounter = retryCount.get(jobId);
-                jobDetails.put("retryCount", retryCounter != null ? retryCounter.get() : 0);
-
-                jobStats.put(jobId, jobDetails);
-            }
-        }
-
-        stats.put("jobs", jobStats);
-        result.success(stats);
-    }
 
 
     private void cleanupJob(String jobId) {
