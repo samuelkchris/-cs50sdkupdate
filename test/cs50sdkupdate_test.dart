@@ -355,6 +355,12 @@ class MockCs50sdkupdatePlatform
     throw UnimplementedError();
   }
 
+  @override
+  Future<void> updatePrintProgress(int currentPage, int totalPages, int bytesWritten) {
+    // TODO: implement updatePrintProgress
+    throw UnimplementedError();
+  }
+
   
 }
 

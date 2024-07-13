@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:cs50sdkupdate/cs50sdkupdate.dart';import 'package:pdf_render/pdf_render.dart' as pdf_render;
+import 'package:cs50sdkupdate/cs50sdkupdate.dart';
+import 'package:flutter/services.dart';import 'package:pdf_render/pdf_render.dart' as pdf_render;
 
 enum PrintStatus { pending, printing, printed, failed, cancelled }
 
@@ -107,6 +108,7 @@ class PrintJobManager {
     for (int i = 0; i < pageCount; i++) {
       try {
         String? jobId = await _printPlugin.printPdf(pdfPath);
+        print('Job ID: $jobId');
         addPage('PDF Page ${i + 1}');
         _pages.last['status'] = PrintStatus.printing;
         _pages.last['jobId'] = jobId;
@@ -134,6 +136,7 @@ class PrintJobManager {
   void _startStatsTimer() {
     _statsTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
       await _updatePrintStats();
+      await PrintProgressListener().startListening();
     });
   }
 
@@ -236,4 +239,28 @@ class JobStatus {
     required this.isQueued,
     required this.isStarted,
   });
+}
+
+
+class PrintProgressListener {
+  static const MethodChannel _channel = MethodChannel('cs50sdkupdate');
+
+   startListening() {
+    _channel.setMethodCallHandler(_handleMethodCall);
+  }
+
+  Future<dynamic> _handleMethodCall(MethodCall call) async {
+    switch (call.method) {
+      case 'onPrintProgress':
+        final int currentPage = call.arguments['currentPage'];
+        final int totalPages = call.arguments['totalPages'];
+        final int totalBytesWritten = call.arguments['totalBytesWritten'];
+        // Use these values to update your UI or logic
+        print('Current page: $currentPage, Total pages: $totalPages, Bytes written: $totalBytesWritten');
+        break;
+      default:
+        print('Unhandled method call: ${call.method}');
+        break;
+    }
+  }
 }

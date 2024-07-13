@@ -7,9 +7,10 @@ import 'package:cs50sdkupdate_example/print_status_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:printing/printing.dart';
-import 'package:pdf/widgets.dart' as pw;
 import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+
 import 'editor.dart';
 
 void main() {
@@ -782,10 +783,11 @@ class _HomePageState extends State<HomePage> {
     try {
       // For this example, we'll use a PDF file from the assets folder
       // Make sure to add a PDF file to your assets and update the pubspec.yaml accordingly
-      final byteData = await rootBundle.load('assets/Document.pdf');
+      final byteData = await rootBundle.load('assets/KAT_03_07_2024_18-Batches.pdf');
       final tempDir = await getTemporaryDirectory();
       final tempFile = File('${tempDir.path}/temp.pdf');
       await tempFile.writeAsBytes(byteData.buffer.asUint8List());
+
       await _printJobManager.printPdf(tempFile.path);
       _showSnackBar('PDF printing started');
 
@@ -804,27 +806,25 @@ class _HomePageState extends State<HomePage> {
       final output = await getTemporaryDirectory();
       final file = File('${output.path}/example.pdf');
       await file.writeAsBytes(results);
+      _printJobManager.printPdf(file.path);
 
-
-      // _printJobManager.printImagePdf(file.path);
       _openPrintStatusScreen();
 
       // Open the print status screen
-
     } catch (e) {
       _showSnackBar('Failed to create and print simple PDF: $e');
     }
   }
+
   Future<Uint8List> createAndPrintSimplePdf() async {
-    final pdf = pw.Document(
-    );
+    final pdf = pw.Document();
 
     for (int i = 0; i < 1; i++) {
       pdf.addPage(
         index: 0,
         pw.Page(
-          // pageFormat: const PdfPageFormat(42.0, 111),
-          // margin: const pw.EdgeInsets.only(top: 10),
+          pageFormat: const PdfPageFormat(42.0, 111),
+          margin: const pw.EdgeInsets.only(top: 10),
           build: (pw.Context context) {
             return pw.Center(
               child: pw.Container(
@@ -839,7 +839,8 @@ class _HomePageState extends State<HomePage> {
                     pw.Center(
                       child: pw.Text(
                         'Train Ticket',
-                        style: pw.TextStyle(fontSize: 40, fontWeight: pw.FontWeight.bold),
+                        style: pw.TextStyle(
+                            fontSize: 40, fontWeight: pw.FontWeight.bold),
                       ),
                     ),
                     pw.SizedBox(height: 30),
@@ -892,6 +893,7 @@ class _HomePageState extends State<HomePage> {
       ),
     );
   }
+
   Future<void> _printPdf() async {
     try {
       final byteData =
@@ -900,9 +902,7 @@ class _HomePageState extends State<HomePage> {
       final tempFile = File('${tempDir.path}/temp.pdf');
       await tempFile.writeAsBytes(byteData.buffer.asUint8List());
 
-
-
-        await _printJobManager.printPdf(tempFile.path);
+      await _printJobManager.printPdf(tempFile.path);
 
       _showSnackBar('PDF printing started');
 

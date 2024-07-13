@@ -1,22 +1,32 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'dart:math';
 
+
+// Step 1: Create a StreamController
+final StreamController<int> _printedJobsStreamController = StreamController<int>.broadcast();
+
+void disposeStream() {
+  _printedJobsStreamController.close();
+}
+
 class CircularPrintCounter extends StatefulWidget {
   final int totalJobs;
-  final int printedJobs;
+  // Remove the printedJobs parameter since we'll use a stream
+  // final int printedJobs;
 
   const CircularPrintCounter({
     Key? key,
     required this.totalJobs,
-    required this.printedJobs,
+    // Remove the printedJobs parameter
   }) : super(key: key);
 
   @override
   _CircularPrintCounterState createState() => _CircularPrintCounterState();
 }
 
-class _CircularPrintCounterState extends State<CircularPrintCounter>
-    with SingleTickerProviderStateMixin {
+class _CircularPrintCounterState extends State<CircularPrintCounter> with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _animation;
 
@@ -34,16 +44,6 @@ class _CircularPrintCounterState extends State<CircularPrintCounter>
   }
 
   @override
-  void didUpdateWidget(CircularPrintCounter oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.printedJobs != widget.printedJobs ||
-        oldWidget.totalJobs != widget.totalJobs) {
-      _animationController.reset();
-      _animationController.forward();
-    }
-  }
-
-  @override
   void dispose() {
     _animationController.dispose();
     super.dispose();
@@ -51,47 +51,53 @@ class _CircularPrintCounterState extends State<CircularPrintCounter>
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _animation,
-      builder: (context, child) {
-        return SizedBox(
-          width: 200,
-          height: 200,
-          child: Stack(
-            children: [
-              CustomPaint(
-                size: const Size(200, 200),
-                painter: CircularProgressPainter(
-                  progress: _animation.value *
-                      (widget.printedJobs / widget.totalJobs),
-                  color: Colors.blue,
-                  backgroundColor: Colors.grey.shade300,
-                ),
-              ),
-              Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      '${(widget.printedJobs * _animation.value).toInt()}',
-                      style: const TextStyle(
-                        fontSize: 40,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue,
-                      ),
+    // Step 2: Update the Widget to Use StreamBuilder
+    return StreamBuilder<int>(
+      stream: _printedJobsStreamController.stream,
+      builder: (context, snapshot) {
+        int printedJobs = snapshot.data ?? 0;
+        _animationController.reset();
+        _animationController.forward();
+        return AnimatedBuilder(
+          animation: _animation,
+          builder: (context, child) {
+            return SizedBox(
+              width: 200,
+              height: 200,
+              child: Stack(
+                children: [
+                  CustomPaint(
+                    size: const Size(200, 200),
+                    painter: CircularProgressPainter(
+                      progress: _animation.value * (printedJobs / widget.totalJobs),
+                      color: Colors.blue,
+                      backgroundColor: Colors.grey.shade300,
                     ),
-                    Text(
-                      'of ${widget.totalJobs}',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Printed',
-                      style: TextStyle(
-                        fontSize: 18,
+                  ),
+                  Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          '${(printedJobs * _animation.value).toInt()}',
+                          style: const TextStyle(
+                            fontSize: 40,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue,
+                          ),
+                        ),
+                        Text(
+                          'of ${widget.totalJobs}',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Printed',
+                          style: TextStyle(
+                            fontSize: 18,
                         fontWeight: FontWeight.w500,
                         color: Colors.grey.shade800,
                       ),
@@ -104,6 +110,8 @@ class _CircularPrintCounterState extends State<CircularPrintCounter>
         );
       },
     );
+  },
+);
   }
 }
 

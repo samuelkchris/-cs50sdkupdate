@@ -1,7 +1,5 @@
 package com.pinnisoft.cs50sdkupdate;
 
-import static android.content.ContentValues.TAG;
-
 import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.Context;
@@ -9,7 +7,11 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.pdf.PdfDocument;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
+import android.graphics.Matrix;
+import android.graphics.Paint;
+import android.graphics.Rect;
 import android.graphics.pdf.PdfRenderer;
 import android.os.Build;
 import android.os.Bundle;
@@ -22,7 +24,10 @@ import android.print.PrintDocumentInfo;
 import android.print.PrintJob;
 import android.print.PrintJobInfo;
 import android.print.PrintManager;
-import android.print.pdf.PrintedPdfDocument;
+import android.renderscript.Allocation;
+import android.renderscript.Element;
+import android.renderscript.RenderScript;
+import android.renderscript.ScriptIntrinsicConvolve3x3;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -67,14 +72,16 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
     private static final String TAG = "PdfPrintPlugin";
     private static final int MAX_RETRY_ATTEMPTS = 3;
     private static final int BUFFER_SIZE = 8192;
-
-
+    private final Map<String, PdfDocumentAdapter> activeAdapters = new HashMap<>();
+    private PosApiHelper posApiHelper;
 
     @Override
     public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
         channel = new MethodChannel(flutterPluginBinding.getBinaryMessenger(), "cs50sdkupdate");
         channel.setMethodCallHandler(this);
         context = flutterPluginBinding.getApplicationContext();
+        posApiHelper = PosApiHelper.getInstance();
+
     }
 
     @TargetApi(Build.VERSION_CODES.KITKAT)
@@ -82,6 +89,7 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
     public void onAttachedToActivity(ActivityPluginBinding binding) {
         activity = binding.getActivity();
         printManager = (PrintManager) activity.getSystemService(Context.PRINT_SERVICE);
+
 
     }
 
@@ -620,37 +628,183 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
             result.notImplemented();
         }
     }
-    @TargetApi(Build.VERSION_CODES.KITKAT)
-    private void printPdf(String pdfPath, Result result) {
+
+    @TargetApi(Build.VERSION_CODES.O)
+    public void printPdf(String pdfPath, Result result) {
+        Log.d(TAG, "Starting printPdf with path: " + pdfPath);
         try {
-            String jobName = "Document " + System.currentTimeMillis();
-            PrintDocumentAdapter pda = new PdfDocumentAdapter(pdfPath);
+            File file = new File(pdfPath);
+            if (!file.exists()) {
+                Log.e(TAG, "PDF file does not exist: " + pdfPath);
+                result.error("FILE_NOT_FOUND", "PDF file does not exist", null);
+                return;
+            }
 
-            PrintAttributes attributes = new PrintAttributes.Builder()
-                    .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
-                    .setResolution(new PrintAttributes.Resolution("pdf", "pdf", 300, 300))
-                    .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
-                    .build();
+            ParcelFileDescriptor fileDescriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
+            PdfRenderer renderer = new PdfRenderer(fileDescriptor);
+            Log.d(TAG, "PdfRenderer created successfully. Page count: " + renderer.getPageCount());
 
-            PrintJob printJob = printManager.print(jobName, pda, attributes);
-            String jobId = Objects.requireNonNull(printJob.getId()).toString();
-            activeJobs.put(jobId, printJob);
-            retryCount.put(jobId, new AtomicInteger(0));
-            jobToPdfPath.put(jobId, pdfPath);
+            // Initialize printer
+            int ret = posApiHelper.PrintInit();
+            if (ret != 0) {
+                Log.e(TAG, "Failed to initialize printer: " + ret);
+                result.error("PRINTER_INIT_FAILED", "Failed to initialize printer", null);
+                return;
+            }
 
-            result.success(jobId);
+            // Set print settings for clearer output
+            posApiHelper.PrintSetGray(5);
+            posApiHelper.PrintSetMode(0);
+            posApiHelper.PrintSetSpeed(1);
+            posApiHelper.PrintSetAlign(0);
+            posApiHelper.PrintSetFont((byte) 24, (byte) 24, (byte) 0x33);
+
+            // Define tile size (adjust these values based on your printer's capabilities and memory constraints)
+            int tileWidth = 384;
+            int tileHeight = 984;
+
+            for (int i = 0; i < renderer.getPageCount(); i++) {
+                PdfRenderer.Page page = renderer.openPage(i);
+
+                int pageWidth = page.getWidth();
+                int pageHeight = page.getHeight();
+
+                for (int y = 0; y < pageHeight; y += tileHeight) {
+                    for (int x = 0; x < pageWidth; x += tileWidth) {
+                        // Calculate the size of this tile (might be smaller at edges)
+                        int currentTileWidth = Math.min(tileWidth, pageWidth - x);
+                        int currentTileHeight = Math.min(tileHeight, pageHeight - y);
+
+                        // Create a bitmap for the tile
+                        Bitmap tileBitmap = Bitmap.createBitmap(currentTileWidth, currentTileHeight, Bitmap.Config.ARGB_8888);
+                        Matrix matrix = new Matrix();
+
+                        // Set up the rectangle for rendering
+                        Rect srcRect = new Rect(x, y, x + currentTileWidth, y + currentTileHeight);
+                        Rect dstRect = new Rect(0, 0, currentTileWidth, currentTileHeight);
+                        float scaleX = (float) dstRect.width() / srcRect.width();
+                        float scaleY = (float) dstRect.height() / srcRect.height();
+
+                        matrix.setScale(scaleX, scaleY);
+
+                        // Render the tile with higher quality
+                        page.render(tileBitmap, dstRect, matrix, PdfRenderer.Page.RENDER_MODE_FOR_PRINT);
+
+                        // Apply image processing to enhance contrast
+                        tileBitmap = enhanceBitmapForThermalPrinting(tileBitmap);
+
+                        // Print the tile
+                        ret = posApiHelper.PrintBmp(tileBitmap);
+                        if (ret != 0) {
+                            Log.e(TAG, "Failed to print tile at page " + (i + 1) + ", x=" + x + ", y=" + y + ": " + ret);
+                            result.error("PRINT_FAILED", "Failed to print tile", null);
+                            return;
+                        }
+
+                        tileBitmap.recycle();
+                    }
+
+                    // Move to next line after printing a full row of tiles
+                    posApiHelper.PrintStep(1);
+                }
+
+                // Add some space between pages
+                posApiHelper.PrintStep(50);
+
+                page.close();
+            }
+
+            // Start printing
+            ret = posApiHelper.PrintStart();
+            if (ret != 0) {
+                Log.e(TAG, "Failed to start printing: " + ret);
+                result.error("PRINT_START_FAILED", "Failed to start printing", null);
+                return;
+            }
+
+            renderer.close();
+            fileDescriptor.close();
+
+            Log.d(TAG, "PDF printed successfully");
+            result.success("PDF printed successfully");
+
+        } catch (IOException e) {
+            Log.e(TAG, "IOException occurred", e);
+            result.error("IO_EXCEPTION", "An IO error occurred", e.getMessage());
         } catch (Exception e) {
-            Log.e(TAG, "Failed to start print job", e);
-            result.error("PRINT_ERROR", "Failed to start print job: " + e.getMessage(), null);
+            Log.e(TAG, "Unexpected error occurred", e);
+            result.error("UNEXPECTED_ERROR", "An unexpected error occurred", e.getMessage());
         }
     }
+
+    @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)
+    private Bitmap enhanceBitmapForThermalPrinting(Bitmap original) {
+        Bitmap output = Bitmap.createBitmap(original.getWidth(), original.getHeight(), original.getConfig());
+
+        RenderScript rs = RenderScript.create(context);
+        ScriptIntrinsicConvolve3x3 convolution = ScriptIntrinsicConvolve3x3.create(rs, Element.U8_4(rs));
+        Allocation input = Allocation.createFromBitmap(rs, original);
+        Allocation output_alloc = Allocation.createFromBitmap(rs, output);
+
+        float[] sharpening = {
+                -1, -1, -1,
+                -1,  9, -1,
+                -1, -1, -1
+        };
+        convolution.setCoefficients(sharpening);
+        convolution.setInput(input);
+        convolution.forEach(output_alloc);
+        output_alloc.copyTo(output);
+
+        Paint paint = new Paint();
+        ColorMatrix cm = new ColorMatrix(new float[]
+                {1.5f, 0, 0, 0, -20,
+                        0, 1.5f, 0, 0, -20,
+                        0, 0, 1.5f, 0, -20,
+                        0, 0, 0, 1, 0});
+        paint.setColorFilter(new ColorMatrixColorFilter(cm));
+        Canvas canvas = new Canvas(output);
+        canvas.drawBitmap(output, 0, 0, paint);
+
+        // Optional Thresholding
+        // Bitmap thresholded = Bitmap.createBitmap(output.getWidth(), output.getHeight(), Bitmap.Config.ARGB_8888);
+
+
+        rs.destroy();
+        return output;
+    }
+
+
+//    @TargetApi(Build.VERSION_CODES.KITKAT)
+//    private void printPdf(String pdfPath, Result result) {
+//        try {
+//            String jobName = "Document " + System.currentTimeMillis();
+//            PdfDocumentAdapter pda = new PdfDocumentAdapter(pdfPath);
+//
+//            PrintAttributes attributes = new PrintAttributes.Builder()
+//                    .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
+//                    .setResolution(new PrintAttributes.Resolution("pdf", "pdf", 300, 300))
+//                    .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
+//                    .build();
+//
+//            PrintJob printJob = printManager.print(jobName, pda, attributes);
+//            String jobId = Objects.requireNonNull(printJob.getId()).toString();
+//            activeJobs.put(jobId, printJob);
+//
+//            result.success(jobId);
+//        } catch (Exception e) {
+//            Log.e(TAG, "Failed to start print job", e);
+//            result.error("PRINT_ERROR", "Failed to start print job: " + e.getMessage(), null);
+//        }
+//    }
+
 
     @TargetApi(Build.VERSION_CODES.KITKAT)
     private void cancelJob(String jobId, Result result) {
         PrintJob job = activeJobs.get(jobId);
         if (job != null) {
             job.cancel();
-            cleanupJob(jobId);
+            activeJobs.remove(jobId);
             result.success("Job cancelled");
         } else {
             result.error("JOB_NOT_FOUND", "No active job found with the given ID", null);
@@ -660,20 +814,22 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
     @TargetApi(Build.VERSION_CODES.KITKAT)
     private void retryJob(String jobId, Result result) {
         PrintJob oldJob = activeJobs.get(jobId);
+        PdfDocumentAdapter adapter = activeAdapters.get(jobId);
         String pdfPath = jobToPdfPath.get(jobId);
-        if (oldJob != null && pdfPath != null) {
+        if (oldJob != null && adapter != null && pdfPath != null) {
             if (oldJob.isFailed() || oldJob.isCancelled()) {
-                int attempts = retryCount.get(jobId).getAndIncrement();
+                int attempts = Objects.requireNonNull(retryCount.get(jobId)).getAndIncrement();
                 if (attempts < MAX_RETRY_ATTEMPTS) {
                     PrintJobInfo oldJobInfo = oldJob.getInfo();
-                    PrintDocumentAdapter pda = new PdfDocumentAdapter(pdfPath);
+                    adapter.setResumeWriting(true);
                     PrintAttributes attributes = oldJobInfo.getAttributes();
 
-                    PrintJob newJob = printManager.print(oldJobInfo.getLabel(), pda, attributes);
+                    PrintJob newJob = printManager.print(oldJobInfo.getLabel(), adapter, attributes);
                     String newJobId = Objects.requireNonNull(newJob.getId()).toString();
 
                     cleanupJob(jobId);
                     activeJobs.put(newJobId, newJob);
+                    activeAdapters.put(newJobId, adapter);
                     retryCount.put(newJobId, new AtomicInteger(attempts + 1));
                     jobToPdfPath.put(newJobId, pdfPath);
 
@@ -692,36 +848,43 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
     @TargetApi(Build.VERSION_CODES.KITKAT)
     private void getPrintStats(Result result) {
         Map<String, Object> stats = new HashMap<>();
-        stats.put("totalPagesPrinted", totalPagesPrinted.get());
-        stats.put("totalPagesUnprinted", totalPagesUnprinted.get());
+        // Safely handle potential null values with a default value
+        stats.put("totalPagesPrinted", totalPagesPrinted != null ? totalPagesPrinted.get() : 0);
+        stats.put("totalPagesUnprinted", totalPagesUnprinted != null ? totalPagesUnprinted.get() : 0);
 
         Map<String, Object> jobStats = new HashMap<>();
-        for (Map.Entry<String, PrintJob> entry : activeJobs.entrySet()) {
-            String jobId = entry.getKey();
-            PrintJob job = entry.getValue();
-            PrintJobInfo jobInfo = job.getInfo();
+        if (activeJobs != null) {
+            for (Map.Entry<String, PrintJob> entry : activeJobs.entrySet()) {
+                String jobId = entry.getKey();
+                PrintJob job = entry.getValue();
+                PrintJobInfo jobInfo = job.getInfo();
 
-            Map<String, Object> jobDetails = new HashMap<>();
-            jobDetails.put("pages", jobInfo.getPages() != null ? jobInfo.getPages().length : 0);
-            jobDetails.put("copies", jobInfo.getCopies());
-            jobDetails.put("creationTime", jobInfo.getCreationTime());
-            jobDetails.put("isBlocked", job.isBlocked());
-            jobDetails.put("isCancelled", job.isCancelled());
-            jobDetails.put("isCompleted", job.isCompleted());
-            jobDetails.put("isFailed", job.isFailed());
-            jobDetails.put("isQueued", job.isQueued());
-            jobDetails.put("isStarted", job.isStarted());
-            jobDetails.put("retryCount", retryCount.get(jobId).get());
+                Map<String, Object> jobDetails = new HashMap<>();
+                jobDetails.put("pages", jobInfo.getPages() != null ? jobInfo.getPages().length : 0);
+                jobDetails.put("copies", jobInfo.getCopies());
+                jobDetails.put("creationTime", jobInfo.getCreationTime());
+                jobDetails.put("isBlocked", job.isBlocked());
+                jobDetails.put("isCancelled", job.isCancelled());
+                jobDetails.put("isCompleted", job.isCompleted());
+                jobDetails.put("isFailed", job.isFailed());
+                jobDetails.put("isQueued", job.isQueued());
+                jobDetails.put("isStarted", job.isStarted());
+                // Safely handle potential null values for retryCount
+                AtomicInteger retryCounter = retryCount.get(jobId);
+                jobDetails.put("retryCount", retryCounter != null ? retryCounter.get() : 0);
 
-            jobStats.put(jobId, jobDetails);
+                jobStats.put(jobId, jobDetails);
+            }
         }
 
         stats.put("jobs", jobStats);
         result.success(stats);
     }
 
+
     private void cleanupJob(String jobId) {
         activeJobs.remove(jobId);
+        activeAdapters.remove(jobId);
         retryCount.remove(jobId);
         jobToPdfPath.remove(jobId);
     }
@@ -729,12 +892,15 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
     @TargetApi(Build.VERSION_CODES.KITKAT)
     private class PdfDocumentAdapter extends PrintDocumentAdapter {
         private final String filePath;
+        private long totalBytesWritten;
+        private boolean resumeWriting;
 
         PdfDocumentAdapter(String filePath) {
             this.filePath = filePath;
+            this.totalBytesWritten = 0;
+            this.resumeWriting = false;
         }
 
-        @TargetApi(Build.VERSION_CODES.KITKAT)
         @Override
         public void onLayout(PrintAttributes oldAttributes, PrintAttributes newAttributes,
                              CancellationSignal cancellationSignal, LayoutResultCallback callback,
@@ -752,16 +918,24 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
             callback.onLayoutFinished(pdi, !oldAttributes.equals(newAttributes));
         }
 
-        @TargetApi(Build.VERSION_CODES.KITKAT)
+        @TargetApi(Build.VERSION_CODES.LOLLIPOP)
         @Override
         public void onWrite(PageRange[] pages, ParcelFileDescriptor destination,
                             CancellationSignal cancellationSignal, WriteResultCallback callback) {
             try (InputStream input = new BufferedInputStream(new FileInputStream(filePath));
                  OutputStream output = new BufferedOutputStream(new FileOutputStream(destination.getFileDescriptor()))) {
-
+                ParcelFileDescriptor inputPfd = ParcelFileDescriptor.open(new File(filePath), ParcelFileDescriptor.MODE_READ_ONLY);
+                PdfRenderer renderer = new PdfRenderer(inputPfd);
                 byte[] buffer = new byte[BUFFER_SIZE];
                 int bytesRead;
-                long totalBytesWritten = 0;
+                int pagesPrinted = 0;
+                int totalPages = renderer.getPageCount();
+
+                renderer.close();
+                inputPfd.close();
+                if (resumeWriting) {
+                    input.skip(totalBytesWritten);
+                }
 
                 while ((bytesRead = input.read(buffer)) != -1) {
                     if (cancellationSignal.isCanceled()) {
@@ -772,6 +946,14 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
                     output.write(buffer, 0, bytesRead);
                     totalBytesWritten += bytesRead;
 
+                    // Assume each page is approximately 100KB (adjust as needed)
+                    int currentPage = (int) (totalBytesWritten / (100 * 1024)) + 1;
+                    if (currentPage > pagesPrinted) {
+                        pagesPrinted = currentPage;
+                        // Update UI with current page being printed
+                        updatePrintProgress(pagesPrinted, totalPages);
+                    }
+
                     if (totalBytesWritten % (1024 * 1024) == 0) {
                         output.flush();
                     }
@@ -779,12 +961,41 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
 
                 output.flush();
                 callback.onWriteFinished(new PageRange[]{PageRange.ALL_PAGES});
-                totalPagesPrinted.addAndGet(pages.length);
+                totalPagesPrinted.addAndGet(pagesPrinted);
+                resetPrintProgress();
             } catch (IOException e) {
                 Log.e(TAG, "Error writing PDF", e);
                 callback.onWriteFailed(e.toString());
-                totalPagesUnprinted.addAndGet(pages.length);
+                totalPagesUnprinted.addAndGet(pages.length - (int) (totalBytesWritten / (100 * 1024)));
             }
+        }
+
+        private void updatePrintProgress(int currentPage, int totalPages) {
+            // Send progress update to Flutter
+            if (channel != null) {
+                Map<String, Object> progressData = new HashMap<>();
+                progressData.put("currentPage", currentPage);
+                progressData.put("totalPages", totalPages);
+                progressData.put("totalBytesWritten", totalBytesWritten);
+                channel.invokeMethod("onPrintProgress", progressData);
+            }
+        }
+
+        private void resetPrintProgress() {
+            totalBytesWritten = 0;
+            resumeWriting = false;
+            // Send reset event to Flutter
+            if (channel != null) {
+                channel.invokeMethod("onPrintReset", null);
+            }
+        }
+
+        public void setResumeWriting(boolean resume) {
+            this.resumeWriting = resume;
+        }
+
+        public long getTotalBytesWritten() {
+            return totalBytesWritten;
         }
     }
 

@@ -403,11 +403,12 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
     }
   }
 
+
   @override
  Future<Map<String, dynamic>?> getPrintStats() async {
   try {
     final Map<dynamic, dynamic>? result = await methodChannel.invokeMethod<Map<dynamic, dynamic>>('GetPrintStats');
-    // print("Result: $result");
+    print("Result: $result");
 
     // Parsing the updated structure
     int totalPagesPrinted = result?['totalPagesPrinted'];
@@ -437,6 +438,22 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
   } catch (e) {
     print("Error fetching print stats: $e");
     return null;
+  }
+}
+
+@override
+Future<void> updatePrintProgress(int currentPage, int totalPages, int bytesWritten) async {
+  try {
+    final Map<String, dynamic> args = <String, dynamic>{
+      'currentPage': currentPage,
+      'totalPages': totalPages,
+      'bytesWritten': bytesWritten,
+    };
+
+    print("Updating print progress: $args");
+    await methodChannel.invokeMethod<void>('updatePrintProgress', args);
+  } catch (e) {
+    print('Failed to update print progress: $e');
   }
 }
 }

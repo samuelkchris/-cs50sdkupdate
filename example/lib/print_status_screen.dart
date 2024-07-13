@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:cs50sdkupdate_example/pdf_printer.dart';
 import 'package:cs50sdkupdate_example/printer_counter.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 enum PrintStatus { pending, printed, failed }
@@ -69,7 +70,6 @@ class _ModernPrintStatusScreenState extends State<ModernPrintStatusScreen> {
                   int printedPages = snapshot.data!.where((page) => page['status'] == PrintStatus.printed).length;
                   return CircularPrintCounter(
                     totalJobs: widget.jobManager.pagesCount,
-                    printedJobs: printedPages,
                   );
                 },
               ),

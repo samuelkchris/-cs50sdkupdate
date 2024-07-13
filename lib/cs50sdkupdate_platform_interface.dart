@@ -57,6 +57,7 @@ abstract class Cs50sdkupdatePlatform extends PlatformInterface {
   Future<bool> piccRemove() {
     throw UnimplementedError('piccRemove() has not been implemented.');
   }
+
   Future<String?> piccSamAv2Init(int samSlotNo, List<int> samHostKey) {
     throw UnimplementedError('piccSamAv2Init() has not been implemented.');
   }
@@ -65,11 +66,13 @@ abstract class Cs50sdkupdatePlatform extends PlatformInterface {
     throw UnimplementedError('piccHwModeSet() has not been implemented.');
   }
 
-  Future<String?> piccM1Authority(int type, int blkNo, List<int> pwd, List<int> serialNo) {
+  Future<String?> piccM1Authority(int type, int blkNo, List<int> pwd,
+      List<int> serialNo) {
     throw UnimplementedError('piccM1Authority() has not been implemented.');
   }
 
-  Future<String?> piccNfc(List<int> nfcDataLen, List<int> technology, List<int> nfcUid, List<int> ndefMessage) {
+  Future<String?> piccNfc(List<int> nfcDataLen, List<int> technology,
+      List<int> nfcUid, List<int> ndefMessage) {
     throw UnimplementedError('piccNfc() has not been implemented.');
   }
 
@@ -92,6 +95,7 @@ abstract class Cs50sdkupdatePlatform extends PlatformInterface {
   Future<int?> sysReadSN(List<int> SN) {
     throw UnimplementedError('SysReadSN() has not been implemented.');
   }
+
   Future<String?> sysApiVerson() {
     throw UnimplementedError('SysApiVerson() has not been implemented.');
   }
@@ -108,11 +112,13 @@ abstract class Cs50sdkupdatePlatform extends PlatformInterface {
     throw UnimplementedError('printInit() has not been implemented.');
   }
 
-  Future<String?> printInitWithParams(int gray, int fontHeight, int fontWidth, int fontZoom) {
+  Future<String?> printInitWithParams(int gray, int fontHeight, int fontWidth,
+      int fontZoom) {
     throw UnimplementedError('printInitWithParams() has not been implemented.');
   }
 
-  Future<String?> printSetFont(int asciiFontHeight, int extendFontHeight, int zoom) {
+  Future<String?> printSetFont(int asciiFontHeight, int extendFontHeight,
+      int zoom) {
     throw UnimplementedError('printSetFont() has not been implemented.');
   }
 
@@ -152,15 +158,18 @@ abstract class Cs50sdkupdatePlatform extends PlatformInterface {
     throw UnimplementedError('printBmp() has not been implemented.');
   }
 
-  Future<String?> printBarcode(String contents, int desiredWidth, int desiredHeight, String barcodeFormat) {
+  Future<String?> printBarcode(String contents, int desiredWidth,
+      int desiredHeight, String barcodeFormat) {
     throw UnimplementedError('printBarcode() has not been implemented.');
   }
 
-  Future<String?> printQrCode(String contents, int desiredWidth, int desiredHeight, String barcodeFormat) {
+  Future<String?> printQrCode(String contents, int desiredWidth,
+      int desiredHeight, String barcodeFormat) {
     throw UnimplementedError('printQrCode() has not been implemented.');
   }
 
-  Future<String?> printCutQrCodeStr(String contents, String printTxt, int distance, int desiredWidth, int desiredHeight, String barcodeFormat) {
+  Future<String?> printCutQrCodeStr(String contents, String printTxt,
+      int distance, int desiredWidth, int desiredHeight, String barcodeFormat) {
     throw UnimplementedError('printCutQrCodeStr() has not been implemented.');
   }
 
@@ -225,7 +234,8 @@ abstract class Cs50sdkupdatePlatform extends PlatformInterface {
   }
 
   Future<void> startMonitoringPrintJobs() {
-    throw UnimplementedError('startMonitoringPrintJobs() has not been implemented.');
+    throw UnimplementedError(
+        'startMonitoringPrintJobs() has not been implemented.');
   }
 
   Future<List<Map<String, dynamic>>> getAllPrintJobs() {
@@ -243,14 +253,21 @@ abstract class Cs50sdkupdatePlatform extends PlatformInterface {
   Future<String?> printPdf(String pdfPath) {
     throw UnimplementedError('printPdf() has not been implemented.');
   }
+
   Future<Map<String, dynamic>?> getPrintStats() async {
     throw UnimplementedError('getPrintStats() has not been implemented.');
   }
-  Future<void>cancelJob(String jobId) async {
+
+  Future<void> cancelJob(String jobId) async {
     throw UnimplementedError('cancleJob() has not been implemented.');
   }
 
   Future<String> retryPrintJob(String jobId) async {
     throw UnimplementedError('retryPrintJob() has not been implemented.');
+  }
+
+  Future<void> updatePrintProgress(int currentPage, int totalPages,
+      int bytesWritten) async {
+    throw UnimplementedError('updatePrintProgress() has not been implemented.');
   }
 }
