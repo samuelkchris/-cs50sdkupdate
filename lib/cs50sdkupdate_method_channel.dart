@@ -22,7 +22,7 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
 
   Future<void> _handleMethodCall(MethodCall call) async {
     switch (call.method) {
-      case 'printProgress':
+      case 'printingProgress':
         final Map<String, int> progress = Map<String, int>.from(call.arguments);
         _progressController.add(progress);
         print('Current Page: ${progress['currentPage']}, Total Pages: ${progress['totalPages']}');
