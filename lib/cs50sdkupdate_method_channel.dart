@@ -421,14 +421,20 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
 
   @override
   Future<Map<String, dynamic>> retryPrintJob(String jobId) async {
-    try {
-      final  newJobId = await methodChannel.invokeMethod<Map<String, dynamic>>('RetryJob', {'jobId': jobId});
-      return newJobId!;
-    } on PlatformException catch (e) {
-      print('Error retrying print job: ${e.message}');
-      return {'status': 'ERROR', 'message': e.message};
-    }
+    final result = await methodChannel.invokeMethod<Map<Object?, Object?>>('RetryJob', {'jobId': jobId});
+    return _convertToStringDynamicMap(result);
   }
+
+  Map<String, dynamic> _convertToStringDynamicMap(Map<Object?, Object?>? input) {
+    if (input == null) return {};
+    return Map<String, dynamic>.fromEntries(
+        input.entries.map((entry) => MapEntry(
+            entry.key.toString(),
+            entry.value is Map ? _convertToStringDynamicMap(entry.value as Map<Object?, Object?>) : entry.value
+        ))
+    );
+  }
+
 
 
   @override
