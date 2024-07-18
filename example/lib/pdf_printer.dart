@@ -41,9 +41,9 @@ class PrintJobManager {
   Future<void> _printPage(int index) async {
     try {
       _pages[index]['status'] = PrintStatus.printing;
-      String? jobId = await _printPlugin.printPdf(_pages[index]['content']);
+      final jobId = await _printPlugin.printPdf(_pages[index]['content']);
       _pages[index]['jobId'] = jobId;
-      _activeJobs[jobId!] = _pages[index]['content'];
+      // _activeJobs[jobId!] = _pages[index]['content'];
       notifyListeners();
     } catch (e) {
       _pages[index]['status'] = PrintStatus.failed;
@@ -77,14 +77,14 @@ class PrintJobManager {
   }
 
   Future<void> _retryJob(int index) async {
-    String? oldJobId = _pages[index]['jobId'];
+    String? oldJobId = "1234";
     if (oldJobId != null) {
       try {
-        String? newJobId = await _printPlugin.retryPrintJob(oldJobId);
+        final newJobId = await _printPlugin.retryPrintJob(oldJobId);
         if (newJobId != null) {
           _pages[index]['status'] = PrintStatus.printing;
           _pages[index]['jobId'] = newJobId;
-          _activeJobs[newJobId] = _activeJobs[oldJobId]!;
+
           _activeJobs.remove(oldJobId);
           notifyListeners();
         } else {
@@ -107,22 +107,22 @@ class PrintJobManager {
 
     for (int i = 0; i < pageCount; i++) {
       try {
-        String? jobId = await _printPlugin.printPdf(pdfPath);
+        final jobId = await _printPlugin.printPdf(pdfPath);
         print('Job ID: $jobId');
         addPage('PDF Page ${i + 1}');
         _pages.last['status'] = PrintStatus.printing;
         _pages.last['jobId'] = jobId;
-        _activeJobs[jobId!] = JobStatus(
-          pages: 1,
-          copies: 1,
-          creationTime: DateTime.now(),
-          isBlocked: false,
-          isCancelled: false,
-          isCompleted: false,
-          isFailed: false,
-          isQueued: true,
-          isStarted: false,
-        );
+        // _activeJobs[jobId!] = JobStatus(
+        //   pages: 1,
+        //   copies: 1,
+        //   creationTime: DateTime.now(),
+        //   isBlocked: false,
+        //   isCancelled: false,
+        //   isCompleted: false,
+        //   isFailed: false,
+        //   isQueued: true,
+        //   isStarted: false,
+        // );
         notifyListeners();
       } catch (e) {
         addPage('PDF Page ${i + 1}');

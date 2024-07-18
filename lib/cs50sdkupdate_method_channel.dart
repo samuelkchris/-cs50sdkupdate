@@ -22,9 +22,10 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
 
   Future<void> _handleMethodCall(MethodCall call) async {
     switch (call.method) {
-      case 'updateProgress':
+      case 'printProgress':
         final Map<String, int> progress = Map<String, int>.from(call.arguments);
         _progressController.add(progress);
+        print('Current Page: ${progress['currentPage']}, Total Pages: ${progress['totalPages']}');
         break;
       default:
         throw MissingPluginException('notImplemented');
@@ -403,11 +404,15 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
   }
 
   @override
-  Future<String?> printPdf(String pdfPath) async {
-    return await methodChannel
-        .invokeMethod<String?>('PrintPdf', {'pdfPath': pdfPath});
+  Future<Map<String, dynamic>> printPdf(String pdfPath) async {
+    try {
+      final result = await methodChannel.invokeMethod('PrintPdf', {'pdfPath': pdfPath});
+      return Map<String, dynamic>.from(result);
+    } on PlatformException catch (e) {
+      print("Failed to print PDF: '${e.message}'.");
+      return {'status': 'ERROR', 'message': e.message};
+    }
   }
-
   @override
   Future<void> cancelJob(String jobId) async {
     return await methodChannel
@@ -415,13 +420,13 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
   }
 
   @override
-  Future<String> retryPrintJob(String jobId) async {
+  Future<Map<String, dynamic>> retryPrintJob(String jobId) async {
     try {
-      final String? newJobId = await methodChannel.invokeMethod<String>('RetryJob', {'jobId': jobId});
+      final  newJobId = await methodChannel.invokeMethod<Map<String, dynamic>>('RetryJob', {'jobId': jobId});
       return newJobId!;
     } on PlatformException catch (e) {
       print('Error retrying print job: ${e.message}');
-      return "null";
+      return {'status': 'ERROR', 'message': e.message};
     }
   }
 
@@ -430,7 +435,7 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
  Future<Map<String, dynamic>?> getPrintStats() async {
   try {
     final Map<dynamic, dynamic>? result = await methodChannel.invokeMethod<Map<dynamic, dynamic>>('GetPrintStats');
-    print("Result: $result");
+    // print("Result: $result");
 
     // Parsing the updated structure
     int totalPagesPrinted = result?['totalPagesPrinted'];
@@ -458,7 +463,7 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
     // Returning the parsed result
     return result?.map((key, value) => MapEntry(key as String, value));
   } catch (e) {
-    print("Error fetching print stats: $e");
+    // print("Error fetching print stats: $e");
     return null;
   }
 }

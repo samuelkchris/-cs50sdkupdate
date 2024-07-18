@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:cs50sdkupdate/cs50sdkupdate.dart';
+import 'package:flutter/services.dart';
 
 class PrintProgressWidget extends StatefulWidget {
   final String pdfPath;
@@ -20,6 +21,7 @@ class PrintProgressWidget extends StatefulWidget {
 class _PrintProgressWidgetState extends State<PrintProgressWidget> {
   final Cs50sdkupdate _cs50sdkupdate = Cs50sdkupdate();
   late StreamSubscription<Map<String, int>> _progressSubscription;
+  static const platform = MethodChannel('cs50sdkupdate');
   int _currentPage = 0;
   int _totalPages = 0;
   bool _isPrinting = false;
@@ -33,12 +35,28 @@ class _PrintProgressWidgetState extends State<PrintProgressWidget> {
 
   Future<void> _initializeSdk() async {
     await _cs50sdkupdate.initialize();
+    platform.setMethodCallHandler(_handleMethod);
     _progressSubscription = _cs50sdkupdate.progressStream.listen((progress) {
       setState(() {
         _currentPage = progress['currentPage']!;
         _totalPages = progress['totalPages']!;
+        print('Current Page: $_currentPage, Total Pages: $_totalPages');
       });
     });
+  }
+
+  Future<dynamic> _handleMethod(MethodCall call) async {
+    switch (call.method) {
+      case 'printProgress':
+        setState(() {
+          _currentPage = call.arguments['currentPage'];
+          _totalPages = call.arguments['totalPages'];
+          _statusMessage = 'Printing $_currentPage of $_totalPages';
+        });
+        break;
+      default:
+        print('Unhandled method ${call.method}');
+    }
   }
 
   @override
@@ -58,7 +76,7 @@ class _PrintProgressWidgetState extends State<PrintProgressWidget> {
       final result = await _cs50sdkupdate.printPdf(widget.pdfPath);
       if (result != 'Print job completed successfully') {
         setState(() {
-          _statusMessage = result ?? 'Unknown error occurred';
+          _statusMessage = result.entries.first.value.toString();
         });
         widget.onPrintComplete(_statusMessage);
       } else {
@@ -81,6 +99,7 @@ class _PrintProgressWidgetState extends State<PrintProgressWidget> {
 
   @override
   Widget build(BuildContext context) {
+    print('Current Page: $_currentPage, Total Pages: $_totalPages');
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [

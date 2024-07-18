@@ -12,6 +12,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 import 'editor.dart';
+import 'nfc_dialog.dart';
 
 void main() {
   runApp(const MyApp());
@@ -166,20 +167,73 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  Future<void> startPolling() async {
-    String pollingData;
-    try {
-      pollingData = await _cs50sdkupdatePlugin.piccPolling() ?? 'No data';
-      _showSnackBar('Polling data: $pollingData');
-    } on PlatformException {
-      _showSnackBar('Failed to poll data.');
-      pollingData = 'Failed to poll data.';
-    }
+  Future<void> startNFCScanning() async {
+    bool isPolling = false;
+    Completer<String?> pollingCompleter = Completer<String?>();
 
-    setState(() {
-      _pollingData = pollingData;
+    // Show the NFC dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return NFCDialog(
+          onCancel: () {
+            Navigator.of(context).pop();
+            if (isPolling) {
+              // _cs50sdkupdatePlugin.piccPollingStop();
+            }
+            if (!pollingCompleter.isCompleted) {
+              pollingCompleter.complete(null);
+            }
+          },
+        );
+      },
+    );
+
+    // Start polling
+    isPolling = true;
+    _cs50sdkupdatePlugin.piccPolling().then((data) {
+      isPolling = false;
+      if (!pollingCompleter.isCompleted) {
+        pollingCompleter.complete(data);
+      }
+    }).catchError((error) {
+      isPolling = false;
+      if (!pollingCompleter.isCompleted) {
+        pollingCompleter.completeError(error);
+      }
     });
+
+    try {
+      String? pollingData = await pollingCompleter.future;
+      Navigator.of(context).pop(); // Close the NFC dialog
+
+      if (pollingData != null) {
+        _showSnackBar('NFC data received: $pollingData');
+        setState(() {
+          _pollingData = pollingData;
+        });
+      } else {
+        _showSnackBar('NFC scanning was cancelled');
+        setState(() {
+          _pollingData = 'Scanning cancelled';
+        });
+      }
+    } catch (e) {
+      Navigator.of(context).pop(); // Close the NFC dialog
+      _showSnackBar('Failed to scan NFC: $e');
+      setState(() {
+        _pollingData = 'Failed to scan NFC';
+      });
+    }
   }
+
+  // Update the existing startPolling method to use the new startNFCScanning method
+  Future<void> startPolling() async {
+    await startNFCScanning();
+  }
+
+
 
   Future<void> executeCommands() async {
     String? apiVersion = await _cs50sdkupdatePlugin.sysApiVerson();
@@ -586,7 +640,7 @@ class _HomePageState extends State<HomePage> {
                 _buildButton(Icons.close, 'Close PICC', closePicc),
                 _buildButton(Icons.remove_circle, 'Remove PICC', removePicc),
                 _buildButton(Icons.check_circle, 'PICC Check', piccCheck),
-                _buildButton(Icons.loop, 'Start Polling', startPolling),
+                _buildButton(Icons.loop, 'Start Polling', startNFCScanning),
               ]),
               const SizedBox(height: 16),
               _buildSection('Other Operations', [
@@ -822,7 +876,7 @@ class _HomePageState extends State<HomePage> {
       final output = await getTemporaryDirectory();
       final file = File('${output.path}/example.pdf');
       await file.writeAsBytes(results);
-      _printJobManager.printPdf(file.path);
+      _printJobManager.retryFailedJobs();
 
       _openPrintStatusScreen();
 

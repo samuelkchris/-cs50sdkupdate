@@ -250,7 +250,7 @@ abstract class Cs50sdkupdatePlatform extends PlatformInterface {
     throw UnimplementedError('restartPrintJob() has not been implemented.');
   }
 
-  Future<String?> printPdf(String pdfPath) {
+  Future<Map<String, dynamic>>  printPdf(String pdfPath) {
     throw UnimplementedError('printPdf() has not been implemented.');
   }
 
@@ -262,7 +262,7 @@ abstract class Cs50sdkupdatePlatform extends PlatformInterface {
     throw UnimplementedError('cancleJob() has not been implemented.');
   }
 
-  Future<String> retryPrintJob(String jobId) async {
+  Future<Map<String, dynamic>> retryPrintJob(String jobId) async {
     throw UnimplementedError('retryPrintJob() has not been implemented.');
   }
 

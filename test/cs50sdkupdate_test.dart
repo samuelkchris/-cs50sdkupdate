@@ -331,11 +331,7 @@ class MockCs50sdkupdatePlatform
     throw UnimplementedError();
   }
 
-  @override
-  Future<String> printPdf(String pdfPath) {
-    // TODO: implement printPdf
-    throw UnimplementedError();
-  }
+
 
   @override
   Future<void> cancelJob(String jobId) {
@@ -349,11 +345,7 @@ class MockCs50sdkupdatePlatform
     throw UnimplementedError();
   }
 
-  @override
-  Future<String> retryPrintJob(String jobId) {
-    // TODO: implement retryPrintJob
-    throw UnimplementedError();
-  }
+
 
   @override
   Future<String?> updatePrintProgress(int currentPage, int totalPages) {
@@ -364,6 +356,18 @@ class MockCs50sdkupdatePlatform
   @override
   Future<void> initialize() {
     // TODO: implement initialize
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<Map<String, dynamic>> retryPrintJob(String jobId) {
+    // TODO: implement retryPrintJob
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<Map<String, dynamic>> printPdf(String pdfPath) {
+    // TODO: implement printPdf
     throw UnimplementedError();
   }
 

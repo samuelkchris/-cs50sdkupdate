@@ -19,6 +19,8 @@ class Cs50sdkupdate {
       'currentPage': currentPage,
       'totalPages': totalPages,
     });
+
+    print('Current Page: $currentPage, Total Pages: $totalPages');
   }
 
   void dispose() {
@@ -258,7 +260,7 @@ class Cs50sdkupdate {
     return Cs50sdkupdatePlatform.instance.restartPrintJob(jobId);
   }
 
-  Future<String?> printPdf(String pdfPath) {
+  Future<Map<String, dynamic>>  printPdf(String pdfPath) {
     return Cs50sdkupdatePlatform.instance.printPdf(pdfPath);
   }
 
@@ -270,7 +272,7 @@ class Cs50sdkupdate {
     await Cs50sdkupdatePlatform.instance.cancelJob(jobId);
   }
 
-  Future<String> retryPrintJob(String jobId) async {
+  Future<Map<String, dynamic>> retryPrintJob(String jobId) async {
     return await Cs50sdkupdatePlatform.instance.retryPrintJob(jobId);
   }
 
@@ -280,7 +282,7 @@ class Cs50sdkupdate {
           .updatePrintProgress(currentPage, totalPages);
       return result;
     } catch (e) {
-      print('Failed to update print progress: $e');
+      // print('Failed to update print progress: $e');
       return null;
     }
   }

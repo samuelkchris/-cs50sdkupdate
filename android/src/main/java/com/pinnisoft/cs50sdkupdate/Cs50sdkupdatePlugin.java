@@ -77,6 +77,8 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
     private PosApiHelper posApiHelper;
     private int currentPage = 0;
     private int totalPages = 0;
+    private List<Integer> failedPages = new ArrayList<>();
+    private String currentPdfPath;
 
     @Override
     public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
@@ -625,11 +627,13 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
             }
         } else if (call.method.equals("RetryJob")) {
             String jobId = call.argument("jobId");
-            if (jobId != null) {
-                retryJob(jobId, result);
-            } else {
-                result.error("INVALID_ARGUMENTS", "Missing jobId", null);
-            }
+
+            retryFailedPages(result);
+//            if (jobId != null) {
+//                retryJob(jobId, result);
+//            } else {
+//                result.error("INVALID_ARGUMENTS", "Missing jobId", null);
+//            }
         } else if (call.method.equals("GetPrintStats")) {
             getPrintStats(result);
         } else {
@@ -640,6 +644,8 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
     @TargetApi(Build.VERSION_CODES.O)
     public void printPdf(String pdfPath, Result result) {
         Log.d(TAG, "Starting printPdf with path: " + pdfPath);
+        currentPdfPath = pdfPath;
+        failedPages.clear();
         try {
             File file = new File(pdfPath);
             if (!file.exists()) {
@@ -650,7 +656,7 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
 
             ParcelFileDescriptor fileDescriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
             PdfRenderer renderer = new PdfRenderer(fileDescriptor);
-            int totalPages = renderer.getPageCount();
+            totalPages = renderer.getPageCount();
             Log.d(TAG, "PdfRenderer created successfully. Page count: " + totalPages);
 
             // Initialize printer
@@ -662,69 +668,84 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
             }
 
             // Set print settings for clearer output
-            posApiHelper.PrintSetGray(5);
-            posApiHelper.PrintSetMode(0);
-            posApiHelper.PrintSetSpeed(1);
-            posApiHelper.PrintSetAlign(0);
-            posApiHelper.PrintSetFont((byte) 24, (byte) 24, (byte) 0x33);
+            setPrintSettings();
 
-            // Define tile size (adjust these values based on your printer's capabilities and memory constraints)
-            int tileWidth = 384;
-            int tileHeight = 984;
+            // Print all pages
+            printPages(renderer, 0, totalPages - 1);
 
-            for (int i = 0; i < totalPages; i++) {
-                PdfRenderer.Page page = renderer.openPage(i);
+            // Start printing
+            ret = posApiHelper.PrintStart();
+            if (ret != 0) {
+                Log.e(TAG, "Failed to start printing: " + ret);
+                result.error("PRINT_START_FAILED", "Failed to start printing", null);
+                return;
+            }
 
-                int pageWidth = page.getWidth();
-                int pageHeight = page.getHeight();
+            renderer.close();
+            fileDescriptor.close();
 
-                for (int y = 0; y < pageHeight; y += tileHeight) {
-                    for (int x = 0; x < pageWidth; x += tileWidth) {
-                        // Calculate the size of this tile (might be smaller at edges)
-                        int currentTileWidth = Math.min(tileWidth, pageWidth - x);
-                        int currentTileHeight = Math.min(tileHeight, pageHeight - y);
+            if (!failedPages.isEmpty()) {
+                Log.w(TAG, "Some pages failed to print: " + failedPages);
+                result.success(new HashMap<String, Object>() {{
+                    put("status", "PARTIAL_SUCCESS");
+                    put("failedPages", failedPages);
+                }});
+            } else {
+                Log.d(TAG, "PDF printed successfully");
+                result.success(new HashMap<String, Object>() {{
+                    put("status", "SUCCESS");
+                }});
+            }
 
-                        // Create a bitmap for the tile
-                        Bitmap tileBitmap = Bitmap.createBitmap(currentTileWidth, currentTileHeight, Bitmap.Config.ARGB_8888);
-                        Matrix matrix = new Matrix();
+        } catch (IOException e) {
+            Log.e(TAG, "IOException occurred", e);
+            result.error("IO_EXCEPTION", "An IO error occurred", e.getMessage());
+        } catch (Exception e) {
+            Log.e(TAG, "Unexpected error occurred", e);
+            result.error("UNEXPECTED_ERROR", "An unexpected error occurred", e.getMessage());
+        }
+    }
 
-                        // Set up the rectangle for rendering
-                        Rect srcRect = new Rect(x, y, x + currentTileWidth, y + currentTileHeight);
-                        Rect dstRect = new Rect(0, 0, currentTileWidth, currentTileHeight);
-                        float scaleX = (float) dstRect.width() / srcRect.width();
-                        float scaleY = (float) dstRect.height() / srcRect.height();
+    @TargetApi(Build.VERSION_CODES.O)
+    public void retryFailedPages(Result result) {
+        Log.d(TAG, "Starting retryFailedPages");
+        if (failedPages.isEmpty()) {
+            Log.d(TAG, "No failed pages to retry");
+            result.success(new HashMap<String, Object>() {{
+                put("status", "NO_RETRY_NEEDED");
+            }});
+            return;
+        }
 
-                        matrix.setScale(scaleX, scaleY);
+        try {
+            File file = new File(currentPdfPath);
+            if (!file.exists()) {
+                Log.e(TAG, "PDF file does not exist: " + currentPdfPath);
+                result.error("FILE_NOT_FOUND", "PDF file does not exist", null);
+                return;
+            }
 
-                        // Render the tile with higher quality
-                        page.render(tileBitmap, dstRect, matrix, PdfRenderer.Page.RENDER_MODE_FOR_PRINT);
+            ParcelFileDescriptor fileDescriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
+            PdfRenderer renderer = new PdfRenderer(fileDescriptor);
 
-                        // Apply image processing to enhance contrast
-                        tileBitmap = enhanceBitmapForThermalPrinting(tileBitmap);
+            // Initialize printer
+            int ret = posApiHelper.PrintInit();
+            if (ret != 0) {
+                Log.e(TAG, "Failed to initialize printer: " + ret);
+                result.error("PRINTER_INIT_FAILED", "Failed to initialize printer", null);
+                return;
+            }
 
-                        // Print the tile
-                        ret = posApiHelper.PrintBmp(tileBitmap);
-                        if (ret != 0) {
-                            Log.e(TAG, "Failed to print tile at page " + (i + 1) + ", x=" + x + ", y=" + y + ": " + ret);
-                            result.error("PRINT_FAILED", "Failed to print tile", null);
-                            return;
-                        }
+            // Set print settings for clearer output
+            setPrintSettings();
 
-                        tileBitmap.recycle();
-                    }
-
-                    // Move to next line after printing a full row of tiles
-                    posApiHelper.PrintStep(1);
+            List<Integer> stillFailedPages = new ArrayList<>();
+            for (int pageIndex : failedPages) {
+                if (!printPage(renderer, pageIndex, 384, 984)) {
+                    stillFailedPages.add(pageIndex);
                 }
-
                 // Add some space between pages
                 posApiHelper.PrintStep(50);
-
-                page.close();
-
-                // Send progress update to Flutter side
-                int currentPage = i + 1;
-                sendProgressUpdate(currentPage, totalPages);
             }
 
             // Start printing
@@ -738,16 +759,106 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
             renderer.close();
             fileDescriptor.close();
 
-            Log.d(TAG, "PDF printed successfully");
-            result.success("PDF printed successfully");
+            failedPages = stillFailedPages;
+            if (!failedPages.isEmpty()) {
+                Log.w(TAG, "Some pages still failed after retry: " + failedPages);
+                result.success(new HashMap<String, Object>() {{
+                    put("status", "PARTIAL_RETRY_SUCCESS");
+                    put("failedPages", failedPages);
+                }});
+            } else {
+                Log.d(TAG, "All failed pages printed successfully on retry");
+                result.success(new HashMap<String, Object>() {{
+                    put("status", "RETRY_SUCCESS");
+                }});
+            }
 
         } catch (IOException e) {
-            Log.e(TAG, "IOException occurred", e);
-            result.error("IO_EXCEPTION", "An IO error occurred", e.getMessage());
+            Log.e(TAG, "IOException occurred during retry", e);
+            result.error("IO_EXCEPTION", "An IO error occurred during retry", e.getMessage());
         } catch (Exception e) {
-            Log.e(TAG, "Unexpected error occurred", e);
-            result.error("UNEXPECTED_ERROR", "An unexpected error occurred", e.getMessage());
+            Log.e(TAG, "Unexpected error occurred during retry", e);
+            result.error("UNEXPECTED_ERROR", "An unexpected error occurred during retry", e.getMessage());
         }
+    }
+
+    private void setPrintSettings() {
+        posApiHelper.PrintSetGray(5);
+        posApiHelper.PrintSetMode(0);
+        posApiHelper.PrintSetSpeed(1);
+        posApiHelper.PrintSetAlign(0);
+        posApiHelper.PrintSetFont((byte) 24, (byte) 24, (byte) 0x33);
+    }
+
+    private void printPages(PdfRenderer renderer, int startPage, int endPage) {
+        // Define tile size (adjust these values based on your printer's capabilities and memory constraints)
+        int tileWidth = 384;
+        int tileHeight = 984;
+
+        for (int i = startPage; i <= endPage; i++) {
+            if (!printPage(renderer, i, tileWidth, tileHeight)) {
+                failedPages.add(i);
+            }
+            // Add some space between pages
+            posApiHelper.PrintStep(50);
+        }
+    }
+
+    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
+    private boolean printPage(PdfRenderer renderer, int pageIndex, int tileWidth, int tileHeight) {
+        PdfRenderer.Page page = renderer.openPage(pageIndex);
+        int pageWidth = page.getWidth();
+        int pageHeight = page.getHeight();
+
+        boolean pageSuccessful = true;
+
+        for (int y = 0; y < pageHeight; y += tileHeight) {
+            for (int x = 0; x < pageWidth; x += tileWidth) {
+                // Calculate the size of this tile (might be smaller at edges)
+                int currentTileWidth = Math.min(tileWidth, pageWidth - x);
+                int currentTileHeight = Math.min(tileHeight, pageHeight - y);
+
+                // Create a bitmap for the tile
+                Bitmap tileBitmap = Bitmap.createBitmap(currentTileWidth, currentTileHeight, Bitmap.Config.ARGB_8888);
+                Matrix matrix = new Matrix();
+
+                // Set up the rectangle for rendering
+                Rect srcRect = new Rect(x, y, x + currentTileWidth, y + currentTileHeight);
+                Rect dstRect = new Rect(0, 0, currentTileWidth, currentTileHeight);
+                float scaleX = (float) dstRect.width() / srcRect.width();
+                float scaleY = (float) dstRect.height() / srcRect.height();
+
+                matrix.setScale(scaleX, scaleY);
+
+                // Render the tile with higher quality
+                page.render(tileBitmap, dstRect, matrix, PdfRenderer.Page.RENDER_MODE_FOR_PRINT);
+
+                // Apply image processing to enhance contrast
+                tileBitmap = enhanceBitmapForThermalPrinting(tileBitmap);
+
+                // Print the tile
+                int ret = posApiHelper.PrintBmp(tileBitmap);
+                if (ret != 0) {
+                    Log.e(TAG, "Failed to print tile at page " + (pageIndex + 1) + ", x=" + x + ", y=" + y + ": " + ret);
+                    pageSuccessful = false;
+                    break;
+                }
+
+                tileBitmap.recycle();
+            }
+
+            if (!pageSuccessful) break;
+
+            // Move to next line after printing a full row of tiles
+            posApiHelper.PrintStep(1);
+        }
+
+        page.close();
+
+        // Send progress update to Flutter side
+        sendProgressUpdate(pageIndex + 1, totalPages);
+
+        return pageSuccessful;
     }
 
 
@@ -1054,177 +1165,3 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
         activity = null;
     }
 }
-
-
-// version 1:
-
-//private float calculateScaleFactor(PrintAttributes.MediaSize mediaSize, int docWidth, int docHeight) {
-//    float scaleX = (float) mediaSize.getWidthMils() / (docWidth * 1000f / 72f);
-//    float scaleY = (float) mediaSize.getHeightMils() / (docHeight * 1000f / 72f);
-//    return Math.min(scaleX, scaleY);
-//}
-//
-//private boolean isPageBlank(Bitmap bitmap) {
-//    int width = bitmap.getWidth();
-//    int height = bitmap.getHeight();
-//    int totalPixels = width * height;
-//    int whitePixels = 0;
-//    int blackPixels = 0;
-//
-//    for (int y = 0; y < height; y++) {
-//        for (int x = 0; x < width; x++) {
-//            int pixel = bitmap.getPixel(x, y);
-//            if (pixel == Color.WHITE) {
-//                whitePixels++;
-//            } else if (pixel == Color.BLACK) {
-//                blackPixels++;
-//            }
-//        }
-//    }
-//
-//    // Consider the page blank if it's more than 99% white or black
-//    return (whitePixels > 0.99 * totalPixels) || (blackPixels > 0.99 * totalPixels);
-//}
-//
-//private Bitmap enhanceBitmapForThermalPrinting(Bitmap original) {
-//    Bitmap output = Bitmap.createBitmap(original.getWidth(), original.getHeight(), original.getConfig());
-//
-//    RenderScript rs = RenderScript.create(context);
-//    ScriptIntrinsicConvolve3x3 convolution = ScriptIntrinsicConvolve3x3.create(rs, Element.U8_4(rs));
-//    Allocation input = Allocation.createFromBitmap(rs, original);
-//    Allocation output_alloc = Allocation.createFromBitmap(rs, output);
-//
-//    float[] sharpening = {0, -0.2f, 0, -0.2f, 1.8f, -0.2f, 0, -0.2f, 0}; // Reduced sharpening
-//    convolution.setCoefficients(sharpening);
-//    convolution.setInput(input);
-//    convolution.forEach(output_alloc);
-//    output_alloc.copyTo(output);
-//
-//    // Adjust contrast and brightness
-//    Paint paint = new Paint();
-//    ColorMatrix cm = new ColorMatrix(new float[]
-//            {1.2f, 0, 0, 0, -15,
-//                    0, 1.2f, 0, 0, -15,
-//                    0, 0, 1.2f, 0, -15,
-//                    0, 0, 0, 1, 0});
-//    paint.setColorFilter(new ColorMatrixColorFilter(cm));
-//    Canvas canvas = new Canvas(output);
-//    canvas.drawBitmap(output, 0, 0, paint);
-//
-//    rs.destroy();
-//    return output;
-//}
-//
-//private Bitmap floydSteinbergDither(Bitmap src) {
-//    int width = src.getWidth();
-//    int height = src.getHeight();
-//    int[] pixels = new int[width * height];
-//    src.getPixels(pixels, 0, width, 0, 0, width, height);
-//    int[] newPixels = new int[width * height];
-//
-//    for (int y = 0; y < height; y++) {
-//        for (int x = 0; x < width; x++) {
-//            int oldPixel = pixels[y * width + x];
-//            int oldR = Color.red(oldPixel);
-//            int oldG = Color.green(oldPixel);
-//            int oldB = Color.blue(oldPixel);
-//
-//            int gray = (oldR + oldG + oldB) / 3;
-//            int newPixel = gray < 128 ? Color.BLACK : Color.WHITE;
-//            newPixels[y * width + x] = newPixel;
-//
-//            int error = gray - (newPixel == Color.BLACK ? 0 : 255);
-//
-//            if (x + 1 < width) {
-//                addError(pixels, y * width + x + 1, error, 7.0f / 16.0f);
-//            }
-//            if (x - 1 >= 0 && y + 1 < height) {
-//                addError(pixels, (y + 1) * width + x - 1, error, 3.0f / 16.0f);
-//            }
-//            if (y + 1 < height) {
-//                addError(pixels, (y + 1) * width + x, error, 5.0f / 16.0f);
-//            }
-//            if (x + 1 < width && y + 1 < height) {
-//                addError(pixels, (y + 1) * width + x + 1, error, 1.0f / 16.0f);
-//            }
-//        }
-//    }
-//
-//    Bitmap result = Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565);
-//    result.setPixels(newPixels, 0, width, 0, 0, width, height);
-//    return result;
-//}
-//
-//private void addError(int[] pixels, int idx, int error, float factor) {
-//    int color = pixels[idx];
-//    int gray = (Color.red(color) + Color.green(color) + Color.blue(color)) / 3;
-//    gray = Math.min(255, Math.max(0, gray + (int) (error * factor)));
-//    pixels[idx] = Color.rgb(gray, gray, gray);
-//}
-//
-//private Bitmap removePadding(Bitmap src) {
-//    int width = src.getWidth();
-//    int height = src.getHeight();
-//    int left = 0, top = 0, right = width - 1, bottom = height - 1;
-//
-//    // Find left boundary
-//    for (int x = 0; x < width; x++) {
-//        boolean found = false;
-//        for (int y = 0; y < height; y++) {
-//            if (src.getPixel(x, y) == Color.BLACK) {
-//                left = x;
-//                found = true;
-//                break;
-//            }
-//        }
-//        if (found) break;
-//    }
-//
-//    // Find right boundary
-//    for (int x = width - 1; x >= 0; x--) {
-//        boolean found = false;
-//        for (int y = 0; y < height; y++) {
-//            if (src.getPixel(x, y) == Color.BLACK) {
-//                right = x;
-//                found = true;
-//                break;
-//            }
-//        }
-//        if (found) break;
-//    }
-//
-//    // Find top boundary
-//    for (int y = 0; y < height; y++) {
-//        boolean found = false;
-//        for (int x = 0; x < width; x++) {
-//            if (src.getPixel(x, y) == Color.BLACK) {
-//                top = y;
-//                found = true;
-//                break;
-//            }
-//        }
-//        if (found) break;
-//    }
-//
-//    // Find bottom boundary
-//    for (int y = height - 1; y >= 0; y--) {
-//        boolean found = false;
-//        for (int x = 0; x < width; x++) {
-//            if (src.getPixel(x, y) == Color.BLACK) {
-//                bottom = y;
-//                found = true;
-//                break;
-//            }
-//        }
-//        if (found) break;
-//    }
-//
-//    // Add a small margin
-//    int margin = 5;
-//    left = Math.max(0, left - margin);
-//    top = Math.max(0, top - margin);
-//    right = Math.min(width - 1, right + margin);
-//    bottom = Math.min(height - 1, bottom + margin);
-//
-//    return Bitmap.createBitmap(src, left, top, right - left + 1, bottom - top + 1);
-//}
