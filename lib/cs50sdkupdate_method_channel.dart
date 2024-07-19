@@ -425,6 +425,7 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
     return _convertToStringDynamicMap(result);
   }
 
+  @override
   Future<Map<String, dynamic>> printLastPage() async {
     try {
       final result = await methodChannel.invokeMethod('printLastPage');

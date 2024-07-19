@@ -276,6 +276,10 @@ class Cs50sdkupdate {
     return await Cs50sdkupdatePlatform.instance.retryPrintJob(jobId);
   }
 
+  Future<Map<String, dynamic>> printLastPage() async {
+    return await Cs50sdkupdatePlatform.instance.printLastPage();
+  }
+
   Future<String?> updatePrintProgress(int currentPage, int totalPages) async {
     try {
       final String? result = await Cs50sdkupdatePlatform.instance
