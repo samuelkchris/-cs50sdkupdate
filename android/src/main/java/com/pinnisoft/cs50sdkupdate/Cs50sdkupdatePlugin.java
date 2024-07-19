@@ -80,6 +80,8 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
     private int totalPages = 0;
     private List<Integer> failedPages = new ArrayList<>();
     private String currentPdfPath;
+    private String lastPrintedPdfPath;
+    private int lastPrintedPageIndex = -1;
 
     @Override
     public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
@@ -784,8 +786,76 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
         }
 
         sendProcessingProgressUpdate(pageIndex + 1, totalPages);
-
+        lastPrintedPageIndex = pageIndex;
         return pageSuccessful;
+    }
+
+    @TargetApi(Build.VERSION_CODES.O)
+    public void printLastPage(Result result) {
+        Log.d(TAG, "Starting printLastPage");
+        if (lastPrintedPdfPath == null || lastPrintedPdfPath.isEmpty() || lastPrintedPageIndex == -1) {
+            Log.e(TAG, "No previous print job found");
+            result.error("NO_PREVIOUS_JOB", "No previous print job found", null);
+            return;
+        }
+
+        try {
+            File file = new File(lastPrintedPdfPath);
+            if (!file.exists()) {
+                Log.e(TAG, "PDF file does not exist: " + lastPrintedPdfPath);
+                result.error("FILE_NOT_FOUND", "PDF file does not exist", null);
+                return;
+            }
+
+            ParcelFileDescriptor fileDescriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
+            PdfRenderer renderer = new PdfRenderer(fileDescriptor);
+
+            // Initialize printer
+            int ret = posApiHelper.PrintInit();
+            if (ret != 0) {
+                Log.e(TAG, "Failed to initialize printer: " + ret);
+                result.error("PRINTER_INIT_FAILED", "Failed to initialize printer", null);
+                return;
+            }
+
+            // Set print settings for clearer output
+            setPrintSettings();
+
+            // Print the last page
+            boolean success = printPage(renderer, lastPrintedPageIndex, 384, 984);
+
+            // Start printing
+            ret = posApiHelper.PrintStart();
+            if (ret != 0) {
+                Log.e(TAG, "Failed to start printing: " + ret);
+                result.error("PRINT_START_FAILED", "Failed to start printing", null);
+                return;
+            }
+
+            renderer.close();
+            fileDescriptor.close();
+
+            if (success) {
+                Log.d(TAG, "Last page printed successfully");
+                result.success(new HashMap<String, Object>() {{
+                    put("status", "SUCCESS");
+                    put("message", "Last page printed successfully");
+                }});
+            } else {
+                Log.w(TAG, "Failed to print last page");
+                result.success(new HashMap<String, Object>() {{
+                    put("status", "FAILED");
+                    put("message", "Failed to print last page");
+                }});
+            }
+
+        } catch (IOException e) {
+            Log.e(TAG, "IOException occurred", e);
+            result.error("IO_EXCEPTION", "An IO error occurred", e.getMessage());
+        } catch (Exception e) {
+            Log.e(TAG, "Unexpected error occurred", e);
+            result.error("UNEXPECTED_ERROR", "An unexpected error occurred", e.getMessage());
+        }
     }
 
     private void sendProcessingProgressUpdate(int currentPage, int totalPages) {
@@ -887,6 +957,7 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
             result.error("UNEXPECTED_ERROR", errorMsg, e.getStackTrace().toString());
         }
     }
+
 
     private void sendRetryProgressUpdate(int currentPage, int totalPages) {
         if (channel != null) {

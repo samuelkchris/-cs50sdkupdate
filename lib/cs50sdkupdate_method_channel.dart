@@ -425,6 +425,16 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
     return _convertToStringDynamicMap(result);
   }
 
+  Future<Map<String, dynamic>> printLastPage() async {
+    try {
+      final result = await methodChannel.invokeMethod('printLastPage');
+      return Map<String, dynamic>.from(result);
+    } on PlatformException catch (e) {
+      print("Failed to print last page: '${e.message}'.");
+      return {'status': 'ERROR', 'message': e.message};
+    }
+  }
+
   Map<String, dynamic> _convertToStringDynamicMap(Map<Object?, Object?>? input) {
     if (input == null) return {};
     return Map<String, dynamic>.fromEntries(
