@@ -822,7 +822,7 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
             setPrintSettings();
 
             // Print the last page
-            boolean success = printPage(renderer, lastPrintedPageIndex, 384, 984);
+            boolean success = processAndPrintPage(renderer, lastPrintedPageIndex, 384, 984);
 
             // Start printing
             ret = posApiHelper.PrintStart();
