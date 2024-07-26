@@ -150,6 +150,7 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
             byte[] atsLen = new byte[1];
             byte[] sak = new byte[1];
             int poll = posApiHelper.PiccPolling(cardType, uid, uidLen, ats, atsLen, sak);
+
             if (poll == 0) {
                 String cardTypeStr = "Card Type: " + ByteUtil.bytearrayToHexString(cardType, cardType.length);
                 String uidStr = "UID: " + ByteUtil.bytearrayToHexString(uid, uid[0]);
@@ -157,6 +158,7 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
                 String sakStr = "SAK: " + ByteUtil.bytearrayToHexString(sak, sak.length);
                 String resultStr = cardTypeStr + "\n" + uidStr + "\n" + atsStr + "\n" + sakStr;
                 result.success(resultStr);
+                posApiHelper.SysBeep();
             } else {
                 result.error("ERROR", "Failed to poll picc", null);
             }

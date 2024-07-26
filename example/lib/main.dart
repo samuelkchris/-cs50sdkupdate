@@ -13,6 +13,7 @@ import 'package:printing/printing.dart';
 
 import 'editor.dart';
 import 'nfc_dialog.dart';
+import 'nfc_scanner.dart';
 
 void main() {
   runApp(const MyApp());
@@ -168,64 +169,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> startNFCScanning() async {
-    bool isPolling = false;
-    Completer<String?> pollingCompleter = Completer<String?>();
-
-    // Show the NFC dialog
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return NFCDialog(
-          onCancel: () {
-            Navigator.of(context).pop();
-            if (isPolling) {
-              // _cs50sdkupdatePlugin.piccPollingStop();
-            }
-            if (!pollingCompleter.isCompleted) {
-              pollingCompleter.complete(null);
-            }
-          },
-        );
-      },
+   Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => NFCScanner()),
     );
-
-    // Start polling
-    isPolling = true;
-    _cs50sdkupdatePlugin.piccPolling().then((data) {
-      isPolling = false;
-      if (!pollingCompleter.isCompleted) {
-        pollingCompleter.complete(data);
-      }
-    }).catchError((error) {
-      isPolling = false;
-      if (!pollingCompleter.isCompleted) {
-        pollingCompleter.completeError(error);
-      }
-    });
-
-    try {
-      String? pollingData = await pollingCompleter.future;
-      Navigator.of(context).pop(); // Close the NFC dialog
-
-      if (pollingData != null) {
-        _showSnackBar('NFC data received: $pollingData');
-        setState(() {
-          _pollingData = pollingData;
-        });
-      } else {
-        _showSnackBar('NFC scanning was cancelled');
-        setState(() {
-          _pollingData = 'Scanning cancelled';
-        });
-      }
-    } catch (e) {
-      Navigator.of(context).pop(); // Close the NFC dialog
-      _showSnackBar('Failed to scan NFC: $e');
-      setState(() {
-        _pollingData = 'Failed to scan NFC';
-      });
-    }
   }
 
   // Update the existing startPolling method to use the new startNFCScanning method
