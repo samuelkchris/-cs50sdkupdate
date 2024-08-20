@@ -371,6 +371,12 @@ class MockCs50sdkupdatePlatform
     throw UnimplementedError();
   }
 
+  @override
+  Future<Map<String, dynamic>> printLastPage() {
+    // TODO: implement printLastPage
+    throw UnimplementedError();
+  }
+
 
   
 }

@@ -17,6 +17,7 @@ class _NFCScannerState extends State<NFCScanner> {
   String pollingData = '';
   bool isScanning = false;
   final cs50sdkupdatePlugin = Cs50sdkupdate();
+  Timer? inactivityTimer;
 
   Future<void> startNFCScanning() async {
     if (isScanning) return;
@@ -26,6 +27,12 @@ class _NFCScannerState extends State<NFCScanner> {
       pollingData = 'Scanning...';
     });
 
+    showNFCDialog();
+    startInactivityTimer();
+    await continuousPolling();
+  }
+
+  void showNFCDialog() {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -38,28 +45,31 @@ class _NFCScannerState extends State<NFCScanner> {
         );
       },
     );
-
-    await pollForNFC();
   }
 
-  Future<void> pollForNFC() async {
-    const Duration timeout = Duration(seconds: 30);
-    const Duration pollInterval = Duration(milliseconds: 500);
-
-    Timer? timeoutTimer;
-    timeoutTimer = Timer(timeout, () {
+  void startInactivityTimer() {
+    inactivityTimer?.cancel();
+    inactivityTimer = Timer(const Duration(seconds: 30), () {
       stopScanning();
-      showSnackBar('NFC scanning timed out');
+      showSnackBar('NFC scanning timed out after 30 seconds of inactivity');
     });
+  }
+
+  Future<void> continuousPolling() async {
+    const Duration pollInterval = Duration(milliseconds: 500);
 
     while (isScanning) {
       try {
         final data = await cs50sdkupdatePlugin.piccPolling();
         if (data != null && data.isNotEmpty) {
-          timeoutTimer.cancel();
-          stopScanning();
           processNFCData(data);
-          return;
+          // Reset the inactivity timer after successful read
+          startInactivityTimer();
+          // Navigate to data screen and wait for it to close
+          await navigateToDataScreen();
+          if (isScanning) {
+            showNFCDialog(); // Reopen the dialog
+          }
         }
       } catch (e) {
         // Ignore errors and continue polling
@@ -67,8 +77,12 @@ class _NFCScannerState extends State<NFCScanner> {
 
       await Future.delayed(pollInterval);
     }
+  }
 
-    timeoutTimer.cancel();
+  Future<void> navigateToDataScreen() async {
+    Navigator.of(context).pop(); // Close the NFC dialog
+    await Navigator.of(context).push(MaterialPageRoute(
+        builder: (context) => NFCDataScreen(data: pollingData)));
   }
 
   void stopScanning() {
@@ -76,10 +90,16 @@ class _NFCScannerState extends State<NFCScanner> {
 
     setState(() {
       isScanning = false;
+      pollingData = '';
     });
 
-    // cs50sdkupdatePlugin.piccPollingStop();
-    Navigator.of(context).pop();
+    inactivityTimer?.cancel();
+    // Release resources here
+    // cs50sdkupdatePlugin.releaseResources(); // Uncomment and implement if needed
+
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
   }
 
   void processNFCData(String data) {
@@ -110,12 +130,17 @@ SAK: ${parsedData['SAK'] ?? 'N/A'}
     });
 
     print('NFC data received: $pollingData');
-    showSnackBar('NFC UID received: $decimalUid');
   }
 
   void showSnackBar(String message) {
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  void dispose() {
+    inactivityTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -126,12 +151,35 @@ SAK: ${parsedData['SAK'] ?? 'N/A'}
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text('Polling Data: $pollingData'),
             ElevatedButton(
-              onPressed: isScanning ? null : startNFCScanning,
-              child: Text(isScanning ? 'Scanning...' : 'Start NFC Scan'),
+              onPressed: isScanning ? stopScanning : startNFCScanning,
+              child: Text(isScanning ? 'Stop Scanning' : 'Start NFC Scan'),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class NFCDataScreen extends StatelessWidget {
+  final String data;
+
+  const NFCDataScreen({Key? key, required this.data}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    //close the screen after 2 seconds
+    Future.delayed(const Duration(seconds: 2), () {
+      Navigator.of(context).pop();
+    });
+    return Scaffold(
+      appBar: AppBar(title: const Text('NFC Data')),
+      body: Center(
+        child: Text(
+          data,
+          style: const TextStyle(fontSize: 18),
+          textAlign: TextAlign.center,
         ),
       ),
     );

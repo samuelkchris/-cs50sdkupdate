@@ -1,5 +1,7 @@
 package com.pinnisoft.cs50sdkupdate;
 
+import static android.content.ContentValues.TAG;
+
 import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.Context;
@@ -13,18 +15,9 @@ import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.pdf.PdfRenderer;
 import android.os.Build;
-import android.os.Bundle;
-import android.os.CancellationSignal;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.ParcelFileDescriptor;
-import android.print.PageRange;
-import android.print.PrintAttributes;
-import android.print.PrintDocumentAdapter;
-import android.print.PrintDocumentInfo;
-import android.print.PrintJob;
-import android.print.PrintJobInfo;
-import android.print.PrintManager;
 import android.renderscript.Allocation;
 import android.renderscript.Element;
 import android.renderscript.RenderScript;
@@ -36,22 +29,15 @@ import androidx.annotation.NonNull;
 import com.ctk.sdk.ByteUtil;
 import com.ctk.sdk.PosApiHelper;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.embedding.engine.plugins.activity.ActivityAware;
@@ -60,21 +46,11 @@ import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.MethodChannel.Result;
 
-
 public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware {
     private MethodChannel channel;
     private Context context;
     private Activity activity;
-    private PrintManager printManager;
-    private final Map<String, PrintJob> activeJobs = new ConcurrentHashMap<>();
-    private final Map<String, AtomicInteger> retryCount = new ConcurrentHashMap<>();
-    private final Map<String, String> jobToPdfPath = new ConcurrentHashMap<>();
-    private final AtomicInteger totalPagesPrinted = new AtomicInteger(0);
-    private final AtomicInteger totalPagesUnprinted = new AtomicInteger(0);
     private static final String TAG = "PdfPrintPlugin";
-    private static final int MAX_RETRY_ATTEMPTS = 3;
-    private static final int BUFFER_SIZE = 8192;
-    private final Map<String, PdfDocumentAdapter> activeAdapters = new HashMap<>();
     private PosApiHelper posApiHelper;
     private int currentPage = 0;
     private int totalPages = 0;
@@ -82,6 +58,7 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
     private String currentPdfPath;
     private String lastPrintedPdfPath;
     private int lastPrintedPageIndex = -1;
+    private ExecutorService executorService;
 
     @Override
     public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
@@ -89,17 +66,13 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
         channel.setMethodCallHandler(this);
         context = flutterPluginBinding.getApplicationContext();
         posApiHelper = PosApiHelper.getInstance();
-
-
+        executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
     }
 
     @TargetApi(Build.VERSION_CODES.KITKAT)
     @Override
     public void onAttachedToActivity(ActivityPluginBinding binding) {
         activity = binding.getActivity();
-        printManager = (PrintManager) activity.getSystemService(Context.PRINT_SERVICE);
-
-
     }
 
     @Override
@@ -626,7 +599,7 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
         } else if (call.method.equals("CancelJob")) {
             String jobId = call.argument("jobId");
             if (jobId != null) {
-                cancelJob(jobId, result);
+//                cancelJob(jobId, result);
             } else {
                 result.error("INVALID_ARGUMENTS", "Missing jobId", null);
             }
@@ -634,29 +607,40 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
             String jobId = call.argument("jobId");
 
             retryFailedPages(result);
-//            if (jobId != null) {
-//                retryJob(jobId, result);
-//            } else {
-//                result.error("INVALID_ARGUMENTS", "Missing jobId", null);
-//            }
+
         } else if (call.method.equals("GetPrintStats")) {
-            getPrintStats(result);
+//            getPrintStats(result);
         } else {
             result.notImplemented();
         }
-    }
 
-    @TargetApi(Build.VERSION_CODES.O)
-    public void printPdf(String pdfPath, Result result) {
-        Log.d(TAG, "Starting printPdf with path: " + pdfPath);
-        currentPdfPath = pdfPath;
-        failedPages.clear();
+}
+
+private void handleGetPlatformVersion(Result result) {
+    byte[] version = new byte[10];
+    int ret = posApiHelper.SysGetVersion(version);
+    int pic = posApiHelper.PiccOpen();
+    if (ret == 0 && pic == 0) {
+        posApiHelper.SysBeep();
+        result.success("Android " + Build.VERSION.RELEASE + ", SDK Version: " + new String(version) + ", Picc opened");
+    } else {
+        result.error("ERROR", "Failed to get SDK version or open picc", null);
+    }
+}
+
+@TargetApi(Build.VERSION_CODES.LOLLIPOP)
+public void printPdf(String pdfPath, Result result) {
+    Log.d(TAG, "Starting printPdf with path: " + pdfPath);
+    currentPdfPath = pdfPath;
+    failedPages.clear();
+
+    executorService.execute(() -> {
         try {
             File file = new File(pdfPath);
             if (!file.exists()) {
                 String errorMsg = "PDF file does not exist: " + pdfPath;
                 Log.e(TAG, errorMsg);
-                result.error("FILE_NOT_FOUND", errorMsg, null);
+                activity.runOnUiThread(() -> result.error("FILE_NOT_FOUND", errorMsg, null));
                 return;
             }
 
@@ -665,607 +649,284 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
             totalPages = renderer.getPageCount();
             Log.d(TAG, "PdfRenderer created successfully. Page count: " + totalPages);
 
-            // Set print settings for clearer output
             setPrintSettings();
 
-            // Process and print all pages
             boolean allPagesPrinted = processAndPrintPages(renderer, 0, totalPages - 1);
 
             renderer.close();
             fileDescriptor.close();
 
-            if (!failedPages.isEmpty()) {
-                String warningMsg = "Some pages failed to print: " + failedPages;
-                Log.w(TAG, warningMsg);
-                result.success(new HashMap<String, Object>() {{
-                    put("status", "PARTIAL_SUCCESS");
-                    put("failedPages", failedPages);
-                    put("message", warningMsg);
-                }});
-            } else if (allPagesPrinted) {
-                Log.d(TAG, "PDF processed and printed successfully");
-                result.success(new HashMap<String, Object>() {{
-                    put("status", "SUCCESS");
-                    put("message", "PDF processed and printed successfully");
-                }});
-            } else {
-                String errorMsg = "Failed to print all pages. Failed pages: " + failedPages;
-                Log.e(TAG, errorMsg);
-                result.error("PRINT_FAILED", errorMsg, null);
-            }
+            activity.runOnUiThread(() -> {
+                if (!failedPages.isEmpty()) {
+                    String warningMsg = "Some pages failed to print: " + failedPages;
+                    Log.w(TAG, warningMsg);
+                    result.success(new HashMap<String, Object>() {{
+                        put("status", "PARTIAL_SUCCESS");
+                        put("failedPages", failedPages);
+                        put("message", warningMsg);
+                    }});
+                } else if (allPagesPrinted) {
+                    Log.d(TAG, "PDF processed and printed successfully");
+                    result.success(new HashMap<String, Object>() {{
+                        put("status", "SUCCESS");
+                        put("message", "PDF processed and printed successfully");
+                    }});
+                } else {
+                    String errorMsg = "Failed to print all pages. Failed pages: " + failedPages;
+                    Log.e(TAG, errorMsg);
+                    result.error("PRINT_FAILED", errorMsg, null);
+                }
+            });
 
         } catch (IOException e) {
             String errorMsg = "IOException occurred: " + e.getMessage();
             Log.e(TAG, errorMsg, e);
-            result.error("IO_EXCEPTION", errorMsg, Arrays.toString(e.getStackTrace()));
+            activity.runOnUiThread(() -> result.error("IO_EXCEPTION", errorMsg, Arrays.toString(e.getStackTrace())));
         } catch (Exception e) {
             String errorMsg = "Unexpected error occurred: " + e.getMessage();
             Log.e(TAG, errorMsg, e);
-            result.error("UNEXPECTED_ERROR", errorMsg, Arrays.toString(e.getStackTrace()));
+            activity.runOnUiThread(() -> result.error("UNEXPECTED_ERROR", errorMsg, Arrays.toString(e.getStackTrace())));
+        }
+    });
+}
+
+private boolean processAndPrintPages(PdfRenderer renderer, int startPage, int endPage) {
+    int tileWidth = 384;
+    int tileHeight = 984;
+
+    boolean allPagesPrinted = true;
+
+    for (int i = startPage; i <= endPage; i++) {
+        if (!processAndPrintPage(renderer, i, tileWidth, tileHeight)) {
+            failedPages.add(i);
+            allPagesPrinted = false;
+            Log.e(TAG, "Failed to process and print page " + (i + 1));
+        } else {
+            sendPrintingProgressUpdate(i + 1, totalPages);
         }
     }
 
-    private boolean processAndPrintPages(PdfRenderer renderer, int startPage, int endPage) {
-        int tileWidth = 384;
-        int tileHeight = 984;
+    return allPagesPrinted;
+}
 
-        boolean allPagesPrinted = true;
+@TargetApi(Build.VERSION_CODES.LOLLIPOP)
+private boolean processAndPrintPage(PdfRenderer renderer, int pageIndex, int tileWidth, int tileHeight) {
+    PdfRenderer.Page page = renderer.openPage(pageIndex);
+    PosApiHelper posApiHelper = PosApiHelper.getInstance();
+    int pageWidth = page.getWidth();
+    int pageHeight = page.getHeight();
 
-        for (int i = startPage; i <= endPage; i++) {
-            if (!processAndPrintPage(renderer, i, tileWidth, tileHeight)) {
-                failedPages.add(i);
-                allPagesPrinted = false;
-                Log.e(TAG, "Failed to process and print page " + (i + 1));
-            } else {
-                sendPrintingProgressUpdate(i + 1, totalPages);
-            }
-        }
+    boolean pageSuccessful = true;
 
-        return allPagesPrinted;
+    int ret = posApiHelper.PrintInit();
+    if (ret != 0) {
+        String errorMsg = "Failed to initialize printer for page " + (pageIndex + 1) + ". Error code: " + ret;
+        Log.e(TAG, errorMsg);
+        return false;
     }
 
-    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
-    private boolean processAndPrintPage(PdfRenderer renderer, int pageIndex, int tileWidth, int tileHeight) {
-        PdfRenderer.Page page = renderer.openPage(pageIndex);
-        int pageWidth = page.getWidth();
-        int pageHeight = page.getHeight();
+    Bitmap fullPageBitmap = Bitmap.createBitmap(pageWidth, pageHeight, Bitmap.Config.ARGB_8888);
+    page.render(fullPageBitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_PRINT);
 
-        boolean pageSuccessful = true;
+    fullPageBitmap = enhanceBitmapForThermalPrinting(fullPageBitmap);
 
-        // Initialize printer for this page
-        int ret = posApiHelper.PrintInit();
+    for (int y = 0; y < pageHeight; y += tileHeight) {
+        int currentTileHeight = Math.min(tileHeight, pageHeight - y);
+        Bitmap tileBitmap = Bitmap.createBitmap(fullPageBitmap, 0, y, pageWidth, currentTileHeight);
+
+        ret = posApiHelper.PrintBmp(tileBitmap);
         if (ret != 0) {
-            String errorMsg = "Failed to initialize printer for page " + (pageIndex + 1) + ". Error code: " + ret;
+            String errorMsg = "Failed to queue tile at page " + (pageIndex + 1) + ", y=" + y + ". Error code: " + ret;
             Log.e(TAG, errorMsg);
-            return false;
+            pageSuccessful = false;
+            break;
         }
 
-        for (int y = 0; y < pageHeight; y += tileHeight) {
-            for (int x = 0; x < pageWidth; x += tileWidth) {
-                int currentTileWidth = Math.min(tileWidth, pageWidth - x);
-                int currentTileHeight = Math.min(tileHeight, pageHeight - y);
-
-                Bitmap tileBitmap = Bitmap.createBitmap(currentTileWidth, currentTileHeight, Bitmap.Config.ARGB_8888);
-                Matrix matrix = new Matrix();
-
-                Rect srcRect = new Rect(x, y, x + currentTileWidth, y + currentTileHeight);
-                Rect dstRect = new Rect(0, 0, currentTileWidth, currentTileHeight);
-                float scaleX = (float) dstRect.width() / srcRect.width();
-                float scaleY = (float) dstRect.height() / srcRect.height();
-
-                matrix.setScale(scaleX, scaleY);
-
-                page.render(tileBitmap, dstRect, matrix, PdfRenderer.Page.RENDER_MODE_FOR_PRINT);
-
-                tileBitmap = enhanceBitmapForThermalPrinting(tileBitmap);
-
-                ret = posApiHelper.PrintBmp(tileBitmap);
-                if (ret != 0) {
-                    String errorMsg = "Failed to queue tile at page " + (pageIndex + 1) + ", x=" + x + ", y=" + y + ". Error code: " + ret;
-                    Log.e(TAG, errorMsg);
-                    pageSuccessful = false;
-                    break;
-                }
-
-                tileBitmap.recycle();
-            }
-
-            if (!pageSuccessful) break;
-
-            posApiHelper.PrintStep(1);
-        }
-
-        page.close();
-
-        if (pageSuccessful) {
-            // Start printing for this page
-            ret = posApiHelper.PrintStart();
-            if (ret != 0) {
-                String errorMsg = "Failed to start printing for page " + (pageIndex + 1) + ". Error code: " + ret;
-                Log.e(TAG, errorMsg);
-                pageSuccessful = false;
-            }
-        }
-
-        sendProcessingProgressUpdate(pageIndex + 1, totalPages);
-        lastPrintedPageIndex = pageIndex;
-        return pageSuccessful;
+        tileBitmap.recycle();
+        posApiHelper.PrintStep(1);
     }
 
-    @TargetApi(Build.VERSION_CODES.O)
-    public void printLastPage(Result result) {
-        Log.d(TAG, "Starting printLastPage");
-        if (lastPrintedPdfPath == null || lastPrintedPdfPath.isEmpty() || lastPrintedPageIndex == -1) {
-            Log.e(TAG, "No previous print job found");
-            result.error("NO_PREVIOUS_JOB", "No previous print job found", null);
+    fullPageBitmap.recycle();
+    page.close();
+
+    if (pageSuccessful) {
+        ret = posApiHelper.PrintStart();
+        if (ret != 0) {
+            String errorMsg = "Failed to start printing for page " + (pageIndex + 1) + ". Error code: " + ret;
+            Log.e(TAG, errorMsg);
+            pageSuccessful = false;
+        }
+    }
+
+    sendProcessingProgressUpdate(pageIndex + 1, totalPages);
+    lastPrintedPageIndex = pageIndex;
+    return pageSuccessful;
+}
+
+@TargetApi(Build.VERSION_CODES.O)
+public void retryFailedPages(Result result) {
+    Log.d(TAG, "Starting retryFailedPages");
+    if (failedPages.isEmpty()) {
+        Log.d(TAG, "No failed pages to retry");
+        result.success(new HashMap<String, Object>() {{
+            put("status", "NO_RETRY_NEEDED");
+            put("message", "No failed pages to retry");
+        }});
+        return;
+    }
+
+    try {
+        File file = new File(currentPdfPath);
+        if (!file.exists()) {
+            String errorMsg = "PDF file does not exist: " + currentPdfPath;
+            Log.e(TAG, errorMsg);
+            result.error("FILE_NOT_FOUND", errorMsg, null);
             return;
         }
 
-        try {
-            File file = new File(lastPrintedPdfPath);
-            if (!file.exists()) {
-                Log.e(TAG, "PDF file does not exist: " + lastPrintedPdfPath);
-                result.error("FILE_NOT_FOUND", "PDF file does not exist", null);
-                return;
-            }
+        ParcelFileDescriptor fileDescriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
+        PdfRenderer renderer = new PdfRenderer(fileDescriptor);
 
-            ParcelFileDescriptor fileDescriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
-            PdfRenderer renderer = new PdfRenderer(fileDescriptor);
+        List<Integer> stillFailedPages = new ArrayList<>();
+        int totalRetryPages = failedPages.size();
+        int currentRetryPage = 0;
 
-            // Initialize printer
-            int ret = posApiHelper.PrintInit();
-            if (ret != 0) {
-                Log.e(TAG, "Failed to initialize printer: " + ret);
-                result.error("PRINTER_INIT_FAILED", "Failed to initialize printer", null);
-                return;
-            }
+        setPrintSettings();
 
-            // Set print settings for clearer output
-            setPrintSettings();
-
-            // Print the last page
-            boolean success = processAndPrintPage(renderer, lastPrintedPageIndex, 384, 984);
-
-            // Start printing
-            ret = posApiHelper.PrintStart();
-            if (ret != 0) {
-                Log.e(TAG, "Failed to start printing: " + ret);
-                result.error("PRINT_START_FAILED", "Failed to start printing", null);
-                return;
-            }
-
-            renderer.close();
-            fileDescriptor.close();
-
-            if (success) {
-                Log.d(TAG, "Last page printed successfully");
-                result.success(new HashMap<String, Object>() {{
-                    put("status", "SUCCESS");
-                    put("message", "Last page printed successfully");
-                }});
+        for (int pageIndex : failedPages) {
+            currentRetryPage++;
+            if (!processAndPrintPage(renderer, pageIndex, 384, 984)) {
+                stillFailedPages.add(pageIndex);
+                Log.e(TAG, "Failed to reprint page " + (pageIndex + 1));
             } else {
-                Log.w(TAG, "Failed to print last page");
-                result.success(new HashMap<String, Object>() {{
-                    put("status", "FAILED");
-                    put("message", "Failed to print last page");
-                }});
+                Log.d(TAG, "Successfully reprinted page " + (pageIndex + 1));
             }
-
-        } catch (IOException e) {
-            Log.e(TAG, "IOException occurred", e);
-            result.error("IO_EXCEPTION", "An IO error occurred", e.getMessage());
-        } catch (Exception e) {
-            Log.e(TAG, "Unexpected error occurred", e);
-            result.error("UNEXPECTED_ERROR", "An unexpected error occurred", e.getMessage());
+            sendRetryProgressUpdate(currentRetryPage, totalRetryPages);
         }
-    }
 
-    private void sendProcessingProgressUpdate(int currentPage, int totalPages) {
-        this.currentPage = currentPage;
-        this.totalPages = totalPages;
-        if (channel != null) {
-            Map<String, Object> progressMap = new HashMap<>();
-            progressMap.put("currentPage", currentPage);
-            progressMap.put("totalPages", totalPages);
-            progressMap.put("method", "processingProgress");
+        renderer.close();
+        fileDescriptor.close();
 
-            Log.d(TAG, "Sending processing progress update: " + currentPage + "/" + totalPages);
-
-            new Handler(Looper.getMainLooper()).post(() -> channel.invokeMethod("processingProgress", progressMap));
-        }
-    }
-
-    private void sendPrintingProgressUpdate(int currentPage, int totalPages) {
-        if (channel != null) {
-            Map<String, Object> progressMap = new HashMap<>();
-            progressMap.put("currentPage", currentPage);
-            progressMap.put("totalPages", totalPages);
-            progressMap.put("method", "printingProgress");
-
-            Log.d(TAG, "Sending printing progress update: " + currentPage + "/" + totalPages);
-
-            new Handler(Looper.getMainLooper()).post(() -> channel.invokeMethod("printingProgress", progressMap));
-        }
-    }
-    @TargetApi(Build.VERSION_CODES.O)
-    public void retryFailedPages(Result result) {
-        Log.d(TAG, "Starting retryFailedPages");
-        if (failedPages.isEmpty()) {
-            Log.d(TAG, "No failed pages to retry");
+        failedPages = stillFailedPages;
+        if (!failedPages.isEmpty()) {
+            String warningMsg = "Some pages still failed after retry: " + failedPages;
+            Log.w(TAG, warningMsg);
             result.success(new HashMap<String, Object>() {{
-                put("status", "NO_RETRY_NEEDED");
-                put("message", "No failed pages to retry");
+                put("status", "PARTIAL_RETRY_SUCCESS");
+                put("failedPages", failedPages);
+                put("message", warningMsg);
             }});
-            return;
+        } else {
+            Log.d(TAG, "All failed pages printed successfully on retry");
+            result.success(new HashMap<String, Object>() {{
+                put("status", "RETRY_SUCCESS");
+                put("message", "All failed pages printed successfully on retry");
+            }});
         }
 
-        try {
-            File file = new File(currentPdfPath);
-            if (!file.exists()) {
-                String errorMsg = "PDF file does not exist: " + currentPdfPath;
-                Log.e(TAG, errorMsg);
-                result.error("FILE_NOT_FOUND", errorMsg, null);
-                return;
-            }
-
-            ParcelFileDescriptor fileDescriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
-            PdfRenderer renderer = new PdfRenderer(fileDescriptor);
-
-            List<Integer> stillFailedPages = new ArrayList<>();
-            int totalRetryPages = failedPages.size();
-            int currentRetryPage = 0;
-
-            // Set print settings for clearer output
-            setPrintSettings();
-
-            for (int pageIndex : failedPages) {
-                currentRetryPage++;
-                if (!processAndPrintPage(renderer, pageIndex, 384, 984)) {
-                    stillFailedPages.add(pageIndex);
-                    Log.e(TAG, "Failed to reprint page " + (pageIndex + 1));
-                } else {
-                    Log.d(TAG, "Successfully reprinted page " + (pageIndex + 1));
-                }
-                sendRetryProgressUpdate(currentRetryPage, totalRetryPages);
-            }
-
-            renderer.close();
-            fileDescriptor.close();
-
-            failedPages = stillFailedPages;
-            if (!failedPages.isEmpty()) {
-                String warningMsg = "Some pages still failed after retry: " + failedPages;
-                Log.w(TAG, warningMsg);
-                result.success(new HashMap<String, Object>() {{
-                    put("status", "PARTIAL_RETRY_SUCCESS");
-                    put("failedPages", failedPages);
-                    put("message", warningMsg);
-                }});
-            } else {
-                Log.d(TAG, "All failed pages printed successfully on retry");
-                result.success(new HashMap<String, Object>() {{
-                    put("status", "RETRY_SUCCESS");
-                    put("message", "All failed pages printed successfully on retry");
-                }});
-            }
-
-        } catch (IOException e) {
-            String errorMsg = "IOException occurred during retry: " + e.getMessage();
-            Log.e(TAG, errorMsg, e);
-            result.error("IO_EXCEPTION", errorMsg, e.getStackTrace().toString());
-        } catch (Exception e) {
-            String errorMsg = "Unexpected error occurred during retry: " + e.getMessage();
-            Log.e(TAG, errorMsg, e);
-            result.error("UNEXPECTED_ERROR", errorMsg, e.getStackTrace().toString());
-        }
+    } catch (IOException e) {
+        String errorMsg = "IOException occurred during retry: " + e.getMessage();
+        Log.e(TAG, errorMsg, e);
+        result.error("IO_EXCEPTION", errorMsg, e.getStackTrace().toString());
+    } catch (Exception e) {
+        String errorMsg = "Unexpected error occurred during retry: " + e.getMessage();
+        Log.e(TAG, errorMsg, e);
+        result.error("UNEXPECTED_ERROR", errorMsg, e.getStackTrace().toString());
     }
+}
 
-
-    private void sendRetryProgressUpdate(int currentPage, int totalPages) {
-        if (channel != null) {
-            Map<String, Object> progressMap = new HashMap<>();
-            progressMap.put("currentPage", currentPage);
-            progressMap.put("totalPages", totalPages);
-            progressMap.put("method", "retryProgress");
-
-            Log.d(TAG, "Sending retry progress update: " + currentPage + "/" + totalPages);
-
-            new Handler(Looper.getMainLooper()).post(() -> channel.invokeMethod("retryProgress", progressMap));
-        }
-    }
-    private void setPrintSettings() {
-        posApiHelper.PrintSetGray(5);
-        posApiHelper.PrintSetMode(0);
-        posApiHelper.PrintSetSpeed(1);
-        posApiHelper.PrintSetAlign(0);
-        posApiHelper.PrintSetFont((byte) 24, (byte) 24, (byte) 0x33);
-    }
-
-    @TargetApi(Build.VERSION_CODES.KITKAT)
-    private void getPrintStats(Result result) {
-        Map<String, Object> stats = new HashMap<>();
-
+private void sendRetryProgressUpdate(int currentPage, int totalPages) {
+    if (channel != null) {
         Map<String, Object> progressMap = new HashMap<>();
-        progressMap.put("currentPage", this.currentPage);
-        progressMap.put("totalPages", this.totalPages);
-        progressMap.put("method", "printProgress");
-        stats.put("progress", progressMap);
+        progressMap.put("currentPage", currentPage);
+        progressMap.put("totalPages", totalPages);
+        progressMap.put("method", "retryProgress");
 
-        Map<String, Object> jobStats = new HashMap<>();
-        if (activeJobs != null) {
-            for (Map.Entry<String, PrintJob> entry : activeJobs.entrySet()) {
-                String jobId = entry.getKey();
-                PrintJob job = entry.getValue();
-                PrintJobInfo jobInfo = job.getInfo();
+        Log.d(TAG, "Sending retry progress update: " + currentPage + "/" + totalPages);
 
-                Map<String, Object> jobDetails = new HashMap<>();
-                jobDetails.put("pages", jobInfo.getPages() != null ? jobInfo.getPages().length : 0);
-                jobDetails.put("copies", jobInfo.getCopies());
-                jobDetails.put("creationTime", jobInfo.getCreationTime());
-                jobDetails.put("isBlocked", job.isBlocked());
-                jobDetails.put("isCancelled", job.isCancelled());
-                jobDetails.put("isCompleted", job.isCompleted());
-                jobDetails.put("isFailed", job.isFailed());
-                jobDetails.put("isQueued", job.isQueued());
-                jobDetails.put("isStarted", job.isStarted());
-                // Safely handle potential null values for retryCount
-                AtomicInteger retryCounter = retryCount.get(jobId);
-                jobDetails.put("retryCount", retryCounter != null ? retryCounter.get() : 0);
-
-                jobStats.put(jobId, jobDetails);
-            }
-        }
-
-        stats.put("jobs", jobStats);
-        result.success(stats);
+        new Handler(Looper.getMainLooper()).post(() -> channel.invokeMethod("retryProgress", progressMap));
     }
+}
 
-    @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)
-    private Bitmap enhanceBitmapForThermalPrinting(Bitmap original) {
-        Bitmap output = Bitmap.createBitmap(original.getWidth(), original.getHeight(), original.getConfig());
+private void setPrintSettings() {
+    posApiHelper.PrintSetGray(5);
+    posApiHelper.PrintSetMode(0);
+    posApiHelper.PrintSetSpeed(1);
+    posApiHelper.PrintSetAlign(0);
+    posApiHelper.PrintSetFont((byte) 24, (byte) 24, (byte) 0x33);
+}
 
-        RenderScript rs = RenderScript.create(context);
-        ScriptIntrinsicConvolve3x3 convolution = ScriptIntrinsicConvolve3x3.create(rs, Element.U8_4(rs));
-        Allocation input = Allocation.createFromBitmap(rs, original);
-        Allocation output_alloc = Allocation.createFromBitmap(rs, output);
+@TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)
+private Bitmap enhanceBitmapForThermalPrinting(Bitmap original) {
+    Bitmap output = Bitmap.createBitmap(original.getWidth(), original.getHeight(), original.getConfig());
 
-        float[] sharpening = {
-                -1, -1, -1,
-                -1, 9, -1,
-                -1, -1, -1
-        };
-        convolution.setCoefficients(sharpening);
-        convolution.setInput(input);
-        convolution.forEach(output_alloc);
-        output_alloc.copyTo(output);
+    RenderScript rs = RenderScript.create(context);
+    ScriptIntrinsicConvolve3x3 convolution = ScriptIntrinsicConvolve3x3.create(rs, Element.U8_4(rs));
+    Allocation input = Allocation.createFromBitmap(rs, original);
+    Allocation output_alloc = Allocation.createFromBitmap(rs, output);
 
-        Paint paint = new Paint();
-        ColorMatrix cm = new ColorMatrix(new float[]
-                {1.5f, 0, 0, 0, -20,
-                        0, 1.5f, 0, 0, -20,
-                        0, 0, 1.5f, 0, -20,
-                        0, 0, 0, 1, 0});
-        paint.setColorFilter(new ColorMatrixColorFilter(cm));
-        Canvas canvas = new Canvas(output);
-        canvas.drawBitmap(output, 0, 0, paint);
+    float[] sharpening = {-1, -1, -1, -1, 9, -1, -1, -1, -1};
+    convolution.setCoefficients(sharpening);
+    convolution.setInput(input);
+    convolution.forEach(output_alloc);
+    output_alloc.copyTo(output);
 
-        // Optional Thresholding
-        // Bitmap thresholded = Bitmap.createBitmap(output.getWidth(), output.getHeight(), Bitmap.Config.ARGB_8888);
+    Paint paint = new Paint();
+    ColorMatrix cm = new ColorMatrix(new float[]{1.5f, 0, 0, 0, -20, 0, 1.5f, 0, 0, -20, 0, 0, 1.5f, 0, -20, 0, 0, 0, 1, 0});
+    paint.setColorFilter(new ColorMatrixColorFilter(cm));
+    Canvas canvas = new Canvas(output);
+    canvas.drawBitmap(output, 0, 0, paint);
 
+    rs.destroy();
+    return output;
+}
 
-        rs.destroy();
-        return output;
+private void sendProcessingProgressUpdate(int currentPage, int totalPages) {
+    this.currentPage = currentPage;
+    this.totalPages = totalPages;
+    if (channel != null) {
+        Map<String, Object> progressMap = new HashMap<>();
+        progressMap.put("currentPage", currentPage);
+        progressMap.put("totalPages", totalPages);
+        progressMap.put("method", "processingProgress");
+
+        Log.d(TAG, "Sending processing progress update: " + currentPage + "/" + totalPages);
+
+        new Handler(Looper.getMainLooper()).post(() -> channel.invokeMethod("processingProgress", progressMap));
     }
+}
 
+private void sendPrintingProgressUpdate(int currentPage, int totalPages) {
+    if (channel != null) {
+        Map<String, Object> progressMap = new HashMap<>();
+        progressMap.put("currentPage", currentPage);
+        progressMap.put("totalPages", totalPages);
+        progressMap.put("method", "printingProgress");
 
-//    @TargetApi(Build.VERSION_CODES.KITKAT)
-//    private void printPdf(String pdfPath, Result result) {
-//        try {
-//            String jobName = "Document " + System.currentTimeMillis();
-//            PdfDocumentAdapter pda = new PdfDocumentAdapter(pdfPath);
-//
-//            PrintAttributes attributes = new PrintAttributes.Builder()
-//                    .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
-//                    .setResolution(new PrintAttributes.Resolution("pdf", "pdf", 300, 300))
-//                    .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
-//                    .build();
-//
-//            PrintJob printJob = printManager.print(jobName, pda, attributes);
-//            String jobId = Objects.requireNonNull(printJob.getId()).toString();
-//            activeJobs.put(jobId, printJob);
-//
-//            result.success(jobId);
-//        } catch (Exception e) {
-//            Log.e(TAG, "Failed to start print job", e);
-//            result.error("PRINT_ERROR", "Failed to start print job: " + e.getMessage(), null);
-//        }
-//    }
+        Log.d(TAG, "Sending printing progress update: " + currentPage + "/" + totalPages);
 
-
-    @TargetApi(Build.VERSION_CODES.KITKAT)
-    private void cancelJob(String jobId, Result result) {
-        PrintJob job = activeJobs.get(jobId);
-        if (job != null) {
-            job.cancel();
-            activeJobs.remove(jobId);
-            result.success("Job cancelled");
-        } else {
-            result.error("JOB_NOT_FOUND", "No active job found with the given ID", null);
-        }
+        new Handler(Looper.getMainLooper()).post(() -> channel.invokeMethod("printingProgress", progressMap));
     }
+}
 
-    @TargetApi(Build.VERSION_CODES.KITKAT)
-    private void retryJob(String jobId, Result result) {
-        PrintJob oldJob = activeJobs.get(jobId);
-        PdfDocumentAdapter adapter = activeAdapters.get(jobId);
-        String pdfPath = jobToPdfPath.get(jobId);
-        if (oldJob != null && adapter != null && pdfPath != null) {
-            if (oldJob.isFailed() || oldJob.isCancelled()) {
-                int attempts = Objects.requireNonNull(retryCount.get(jobId)).getAndIncrement();
-                if (attempts < MAX_RETRY_ATTEMPTS) {
-                    PrintJobInfo oldJobInfo = oldJob.getInfo();
-                    adapter.setResumeWriting(true);
-                    PrintAttributes attributes = oldJobInfo.getAttributes();
+@Override
+public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
+    channel.setMethodCallHandler(null);
+    executorService.shutdown();
+}
 
-                    PrintJob newJob = printManager.print(oldJobInfo.getLabel(), adapter, attributes);
-                    String newJobId = Objects.requireNonNull(newJob.getId()).toString();
+@Override
+public void onDetachedFromActivityForConfigChanges() {
+    activity = null;
+}
 
-                    cleanupJob(jobId);
-                    activeJobs.put(newJobId, newJob);
-                    activeAdapters.put(newJobId, adapter);
-                    retryCount.put(newJobId, new AtomicInteger(attempts + 1));
-                    jobToPdfPath.put(newJobId, pdfPath);
+@Override
+public void onReattachedToActivityForConfigChanges(ActivityPluginBinding binding) {
+    activity = binding.getActivity();
+}
 
-                    result.success(newJobId);
-                } else {
-                    result.error("MAX_RETRIES_REACHED", "Maximum retry attempts reached for this job", null);
-                }
-            } else {
-                result.error("JOB_NOT_FAILED", "Cannot retry a job that hasn't failed or been cancelled", null);
-            }
-        } else {
-            result.error("JOB_NOT_FOUND", "No active job found with the given ID", null);
-        }
-    }
-
-
-
-
-    private void cleanupJob(String jobId) {
-        activeJobs.remove(jobId);
-        activeAdapters.remove(jobId);
-        retryCount.remove(jobId);
-        jobToPdfPath.remove(jobId);
-    }
-
-    @TargetApi(Build.VERSION_CODES.KITKAT)
-    private class PdfDocumentAdapter extends PrintDocumentAdapter {
-        private final String filePath;
-        private long totalBytesWritten;
-        private boolean resumeWriting;
-
-        PdfDocumentAdapter(String filePath) {
-            this.filePath = filePath;
-            this.totalBytesWritten = 0;
-            this.resumeWriting = false;
-        }
-
-        @Override
-        public void onLayout(PrintAttributes oldAttributes, PrintAttributes newAttributes,
-                             CancellationSignal cancellationSignal, LayoutResultCallback callback,
-                             Bundle extras) {
-            if (cancellationSignal.isCanceled()) {
-                callback.onLayoutCancelled();
-                return;
-            }
-
-            PrintDocumentInfo pdi = new PrintDocumentInfo.Builder("file name")
-                    .setContentType(PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
-                    .setPageCount(PrintDocumentInfo.PAGE_COUNT_UNKNOWN)
-                    .build();
-
-            callback.onLayoutFinished(pdi, !oldAttributes.equals(newAttributes));
-        }
-
-        @TargetApi(Build.VERSION_CODES.LOLLIPOP)
-        @Override
-        public void onWrite(PageRange[] pages, ParcelFileDescriptor destination,
-                            CancellationSignal cancellationSignal, WriteResultCallback callback) {
-            try (InputStream input = new BufferedInputStream(new FileInputStream(filePath));
-                 OutputStream output = new BufferedOutputStream(new FileOutputStream(destination.getFileDescriptor()))) {
-                ParcelFileDescriptor inputPfd = ParcelFileDescriptor.open(new File(filePath), ParcelFileDescriptor.MODE_READ_ONLY);
-                PdfRenderer renderer = new PdfRenderer(inputPfd);
-                byte[] buffer = new byte[BUFFER_SIZE];
-                int bytesRead;
-                int pagesPrinted = 0;
-                int totalPages = renderer.getPageCount();
-
-                renderer.close();
-                inputPfd.close();
-                if (resumeWriting) {
-                    input.skip(totalBytesWritten);
-                }
-
-                while ((bytesRead = input.read(buffer)) != -1) {
-                    if (cancellationSignal.isCanceled()) {
-                        callback.onWriteCancelled();
-                        return;
-                    }
-
-                    output.write(buffer, 0, bytesRead);
-                    totalBytesWritten += bytesRead;
-
-                    // Assume each page is approximately 100KB (adjust as needed)
-                    int currentPage = (int) (totalBytesWritten / (100 * 1024)) + 1;
-                    if (currentPage > pagesPrinted) {
-                        pagesPrinted = currentPage;
-                        // Update UI with current page being printed
-                        updatePrintProgress(pagesPrinted, totalPages);
-                    }
-
-                    if (totalBytesWritten % (1024 * 1024) == 0) {
-                        output.flush();
-                    }
-                }
-
-                output.flush();
-                callback.onWriteFinished(new PageRange[]{PageRange.ALL_PAGES});
-                totalPagesPrinted.addAndGet(pagesPrinted);
-                resetPrintProgress();
-            } catch (IOException e) {
-                Log.e(TAG, "Error writing PDF", e);
-                callback.onWriteFailed(e.toString());
-                totalPagesUnprinted.addAndGet(pages.length - (int) (totalBytesWritten / (100 * 1024)));
-            }
-        }
-
-        private void updatePrintProgress(int currentPage, int totalPages) {
-            // Send progress update to Flutter
-            if (channel != null) {
-                Map<String, Object> progressData = new HashMap<>();
-                progressData.put("currentPage", currentPage);
-                progressData.put("totalPages", totalPages);
-                progressData.put("totalBytesWritten", totalBytesWritten);
-                channel.invokeMethod("onPrintProgress", progressData);
-            }
-        }
-
-        private void resetPrintProgress() {
-            totalBytesWritten = 0;
-            resumeWriting = false;
-            // Send reset event to Flutter
-            if (channel != null) {
-                channel.invokeMethod("onPrintReset", null);
-            }
-        }
-
-        public void setResumeWriting(boolean resume) {
-            this.resumeWriting = resume;
-        }
-
-        public long getTotalBytesWritten() {
-            return totalBytesWritten;
-        }
-    }
-
-
-    @Override
-    public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
-        channel.setMethodCallHandler(null);
-    }
-
-    @Override
-    public void onDetachedFromActivityForConfigChanges() {
-        activity = null;
-    }
-
-    @Override
-    public void onReattachedToActivityForConfigChanges(ActivityPluginBinding binding) {
-        activity = binding.getActivity();
-    }
-
-    @Override
-    public void onDetachedFromActivity() {
-        activity = null;
-    }
+@Override
+public void onDetachedFromActivity() {
+    activity = null;
+}
 }
