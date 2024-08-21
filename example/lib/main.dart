@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:cs50sdkupdate/cs50sdkupdate.dart';
 import 'package:cs50sdkupdate_example/pdf_printer.dart';
+import 'package:cs50sdkupdate_example/print_history.dart';
 import 'package:cs50sdkupdate_example/progress.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -169,7 +170,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> startNFCScanning() async {
-   Navigator.push(
+    Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => NFCScanner()),
     );
@@ -179,7 +180,6 @@ class _HomePageState extends State<HomePage> {
   Future<void> startPolling() async {
     await startNFCScanning();
   }
-
 
 
   Future<void> executeCommands() async {
@@ -193,7 +193,7 @@ class _HomePageState extends State<HomePage> {
     List<int> samHostKey = List.filled(16, 0);
     try {
       String? samInitResponse =
-          await _cs50sdkupdatePlugin.piccSamAv2Init(samSlotNo, samHostKey);
+      await _cs50sdkupdatePlugin.piccSamAv2Init(samSlotNo, samHostKey);
       _showSnackBar('SAM AV2 Init Response: $samInitResponse');
     } catch (e) {
       _showSnackBar('Failed to initialize SAM AV2: $e');
@@ -678,47 +678,9 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _viewPrintJobs() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Print Jobs'),
-          content: Container(
-            width: double.maxFinite,
-            child: ListView.builder(
-              itemCount: _printJobs.length,
-              itemBuilder: (context, index) {
-                final job = _printJobs[index];
-                return ListTile(
-                  title: Text('Job ID: ${job['id']}'),
-                  subtitle: Text('Status: ${job['status']}'),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: Icon(Icons.cancel),
-                        onPressed: () => _cancelPrintJob(job['id']),
-                      ),
-                      IconButton(
-                        icon: Icon(Icons.refresh),
-                        onPressed: () => _restartPrintJob(job['id']),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              child: Text('Close'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-          ],
-        );
-      },
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => PrintHistoryScreen()),
     );
   }
 
@@ -733,7 +695,7 @@ class _HomePageState extends State<HomePage> {
           children: [
             Text(title,
                 style:
-                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             Wrap(
               spacing: 8,
@@ -762,10 +724,11 @@ class _HomePageState extends State<HomePage> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => CustomDocumentEditor(
-          printPlugin: _cs50sdkupdatePlugin,
-          jobManager: _printJobManager,
-        ),
+        builder: (context) =>
+            CustomDocumentEditor(
+              printPlugin: _cs50sdkupdatePlugin,
+              jobManager: _printJobManager,
+            ),
       ),
     );
   }
@@ -781,7 +744,7 @@ class _HomePageState extends State<HomePage> {
       // For this example, we'll use a PDF file from the assets folder
       // Make sure to add a PDF file to your assets and update the pubspec.yaml accordingly
       final byteData =
-          await rootBundle.load('assets/KAT_03_07_2024_18-Batches.pdf');
+      await rootBundle.load('assets/KAT_03_07_2024_18-Batches.pdf');
       final tempDir = await getTemporaryDirectory();
       final tempFile = File('${tempDir.path}/temp.pdf');
       await tempFile.writeAsBytes(byteData.buffer.asUint8List());
@@ -914,7 +877,7 @@ class _HomePageState extends State<HomePage> {
   Future<void> _printPdf() async {
     try {
       final byteData =
-          await rootBundle.load('assets/KAT_03_07_2024_18-Batches.pdf');
+      await rootBundle.load('assets/KAT_03_07_2024_18-Batches.pdf');
       final tempDir = await getTemporaryDirectory();
       final tempFile = File('${tempDir.path}/temp.pdf');
       await tempFile.writeAsBytes(byteData.buffer.asUint8List());
