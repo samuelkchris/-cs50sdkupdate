@@ -130,24 +130,33 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
                 result.error("ERROR", "Failed to check picc", null);
             }
         } else if (call.method.equals("piccPolling")) {
-            byte[] cardType = new byte[2];
-            byte[] uid = new byte[50];
+            byte[] cardType = new byte[4];
+            byte[] uid = new byte[10];
             byte[] uidLen = new byte[1];
-            byte[] ats = new byte[50];
+            byte[] ats = new byte[40];
             byte[] atsLen = new byte[1];
             byte[] sak = new byte[1];
-            int poll = posApiHelper.PiccPolling(cardType, uid, uidLen, ats, atsLen, sak);
+            int ret = posApiHelper.PiccOpen();
 
-            if (poll == 0) {
-                String cardTypeStr = "Card Type: " + ByteUtil.bytearrayToHexString(cardType, cardType.length);
-                String uidStr = "UID: " + ByteUtil.bytearrayToHexString(uid, uid[0]);
-                String atsStr = "ATS: " + ByteUtil.bytearrayToHexString(ats, ats[0]);
-                String sakStr = "SAK: " + ByteUtil.bytearrayToHexString(sak, sak.length);
-                String resultStr = cardTypeStr + "\n" + uidStr + "\n" + atsStr + "\n" + sakStr;
-                result.success(resultStr);
-                posApiHelper.SysBeep();
+            if (ret == 0) {
+                long time = System.currentTimeMillis();
+                while (System.currentTimeMillis() < time + 10000) {
+                    ret = posApiHelper.PiccPolling(cardType, uid, uidLen, ats, atsLen, sak);
+
+                    if (ret == 0) {
+                        String cardTypeStr = "Card Type: " + new String(cardType);
+                        String uidStr = "UID: " + ByteUtil.bytearrayToHexString(uid, uidLen[0]);
+                        String atsStr = "ATS: " + ByteUtil.bytearrayToHexString(ats, atsLen[0]);
+                        String sakStr = "SAK: " + ByteUtil.bytearrayToHexString(sak, 1);
+                        String resultStr = cardTypeStr + "\n" + uidStr + "\n" + atsStr + "\n" + sakStr;
+                        result.success(resultStr);
+                        posApiHelper.SysBeep();
+                        return;
+                    }
+                }
+                result.error("ERROR", "Picc Poll Test Failed...", null);
             } else {
-                result.error("ERROR", "Failed to poll picc", null);
+                result.error("ERROR", "Failed to open picc", null);
             }
         } else if (call.method.equals("piccCommand")) {
             ArrayList<Integer> list = call.argument("apduSend");
@@ -624,13 +633,12 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
 
         } else if (call.method.equals("GetPrintStats")) {
 //            getPrintStats(result);
-        }  else if (call.method.equals("getPrintHistory")){
+        } else if (call.method.equals("getPrintHistory")) {
             getPrintHistory(result);
-        } else if (call.method.equals("reprintDocument")){
+        } else if (call.method.equals("reprintDocument")) {
             String documentId = call.argument("documentId");
             reprintDocument(documentId, result);
-        }
-        else {
+        } else {
             result.notImplemented();
         }
 
@@ -743,34 +751,34 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
         });
     }
 
-private String savePrintedDocument(String originalPdfPath) throws IOException, JSONException {
-    // Read the current print history
-    JSONArray historyArray = new JSONArray(readFileContent(printHistoryFile));
+    private String savePrintedDocument(String originalPdfPath) throws IOException, JSONException {
+        // Read the current print history
+        JSONArray historyArray = new JSONArray(readFileContent(printHistoryFile));
 
-    // Generate a new document ID based on the count of existing documents
-    int documentCount = historyArray.length();
-    String documentId = String.valueOf(documentCount + 1);
+        // Generate a new document ID based on the count of existing documents
+        int documentCount = historyArray.length();
+        String documentId = String.valueOf(documentCount + 1);
 
-    // Create a new file in the app's external files directory
-    File destFile = new File(printHistoryDir, documentId + ".pdf");
+        // Create a new file in the app's external files directory
+        File destFile = new File(printHistoryDir, documentId + ".pdf");
 
-    // Copy the PDF file
-    copyFile(new File(originalPdfPath), destFile);
+        // Copy the PDF file
+        copyFile(new File(originalPdfPath), destFile);
 
-    // Update print history
-    JSONObject newEntry = new JSONObject();
-    newEntry.put("id", documentId);
-    newEntry.put("originalPath", originalPdfPath);
-    newEntry.put("savedPath", destFile.getAbsolutePath());
-    newEntry.put("timestamp", new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date()));
-    historyArray.put(newEntry);
+        // Update print history
+        JSONObject newEntry = new JSONObject();
+        newEntry.put("id", documentId);
+        newEntry.put("originalPath", originalPdfPath);
+        newEntry.put("savedPath", destFile.getAbsolutePath());
+        newEntry.put("timestamp", new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date()));
+        historyArray.put(newEntry);
 
-    FileOutputStream fos = new FileOutputStream(printHistoryFile);
-    fos.write(historyArray.toString(2).getBytes());
-    fos.close();
+        FileOutputStream fos = new FileOutputStream(printHistoryFile);
+        fos.write(historyArray.toString(2).getBytes());
+        fos.close();
 
-    return documentId;
-}
+        return documentId;
+    }
 
     private void copyFile(File sourceFile, File destFile) throws IOException {
         if (!sourceFile.exists()) {
@@ -781,6 +789,7 @@ private String savePrintedDocument(String originalPdfPath) throws IOException, J
             destination.transferFrom(source, 0, source.size());
         }
     }
+
     private String readFileContent(File file) throws IOException {
         byte[] content = new byte[(int) file.length()];
         FileInputStream fis = new FileInputStream(file);
