@@ -139,22 +139,19 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
             int ret = posApiHelper.PiccOpen();
 
             if (ret == 0) {
-                long time = System.currentTimeMillis();
-                while (System.currentTimeMillis() < time + 10000) {
-                    ret = posApiHelper.PiccPolling(cardType, uid, uidLen, ats, atsLen, sak);
+                ret = posApiHelper.PiccPolling(cardType, uid, uidLen, ats, atsLen, sak);
 
-                    if (ret == 0) {
-                        String cardTypeStr = "Card Type: " + new String(cardType);
-                        String uidStr = "UID: " + ByteUtil.bytearrayToHexString(uid, uidLen[0]);
-                        String atsStr = "ATS: " + ByteUtil.bytearrayToHexString(ats, atsLen[0]);
-                        String sakStr = "SAK: " + ByteUtil.bytearrayToHexString(sak, 1);
-                        String resultStr = cardTypeStr + "\n" + uidStr + "\n" + atsStr + "\n" + sakStr;
-                        result.success(resultStr);
-                        posApiHelper.SysBeep();
-                        return;
-                    }
+                if (ret == 0) {
+                    String cardTypeStr = "Card Type: " + new String(cardType);
+                    String uidStr = "UID: " + ByteUtil.bytearrayToHexString(uid, uidLen[0]);
+                    String atsStr = "ATS: " + ByteUtil.bytearrayToHexString(ats, atsLen[0]);
+                    String sakStr = "SAK: " + ByteUtil.bytearrayToHexString(sak, 1);
+                    String resultStr = cardTypeStr + "\n" + uidStr + "\n" + atsStr + "\n" + sakStr;
+                    result.success(resultStr);
+                    posApiHelper.SysBeep();
+                } else {
+                    result.error("ERROR", "Picc Poll Test Failed...", null);
                 }
-                result.error("ERROR", "Picc Poll Test Failed...", null);
             } else {
                 result.error("ERROR", "Failed to open picc", null);
             }
