@@ -1,7 +1,8 @@
 import 'dart:async';
 
 import 'package:cs50sdkupdate/cs50sdkupdate.dart';
-import 'package:flutter/services.dart';import 'package:pdf_render/pdf_render.dart' as pdf_render;
+import 'package:flutter/services.dart';
+import 'package:pdf_render/pdf_render.dart' as pdf_render;
 
 enum PrintStatus { pending, printing, printed, failed, cancelled }
 

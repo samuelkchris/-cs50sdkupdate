@@ -1,6 +1,6 @@
 name: cs50sdkupdate
 description: "The CS50 SDK Update Flutter package provides a comprehensive solution for integrating with the CS POS ES, facilitating operations such as printer management, PICC operations, and more. This package simplifies the process of handling complex POS functionalities, ensuring a smooth and efficient development experience."
-version: 0.0.3
+version: 0.0.4
 homepage: "https://github.com/samuelkchris/-cs50sdkupdate.git"
 
 environment:
@@ -12,7 +12,7 @@ dependencies:
     sdk: flutter
   plugin_platform_interface: ^2.0.2
   flutter_animate: ^4.1.1+1
-  pdf_render: ^1.3.8
+#  pdf_render: ^1.3.8
   path_provider: ^2.0.15
   pdf: ^3.3.0
   printing: ^5.6.0
