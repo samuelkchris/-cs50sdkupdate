@@ -13,7 +13,10 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
   @visibleForTesting
   final methodChannel = const MethodChannel('cs50sdkupdate');
 
-  final StreamController<Map<String, int>> _progressController = StreamController<Map<String, int>>.broadcast();
+  final StreamController<Map<String, int>> _progressController =
+      StreamController<Map<String, int>>.broadcast();
+  final StreamController<ScanResult> _scanController =
+      StreamController<ScanResult>.broadcast();
 
   @override
   Future<void> initialize() async {
@@ -25,19 +28,28 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
       case 'printingProgress':
         final Map<String, int> progress = Map<String, int>.from(call.arguments);
         _progressController.add(progress);
-        print('Current Page: ${progress['currentPage']}, Total Pages: ${progress['totalPages']}');
+        break;
+      case 'onScanResult':
+        final Map<String, dynamic> resultMap =
+            Map<String, dynamic>.from(call.arguments);
+        _scanController.add(ScanResult(
+          result: resultMap['result'] as String,
+          length: resultMap['length'] as int,
+          encodeType: resultMap['encodeType'] as int,
+        ));
         break;
       default:
         throw MissingPluginException('notImplemented');
     }
   }
 
-  Stream<Map<String, int>> get printProgressStream => _progressController.stream;
+  Stream<Map<String, int>> get printProgressStream =>
+      _progressController.stream;
 
   @override
   Future<String?> getPlatformVersion() async {
     final version =
-    await methodChannel.invokeMethod<String>('getPlatformVersion');
+        await methodChannel.invokeMethod<String>('getPlatformVersion');
     return version;
   }
 
@@ -62,7 +74,7 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
       'apduSend': apduSend,
     };
     final List<int>? apduResp =
-    await methodChannel.invokeMethod<List<int>>('piccCommand', args);
+        await methodChannel.invokeMethod<List<int>>('piccCommand', args);
     return apduResp != null ? String.fromCharCodes(apduResp) : null;
   }
 
@@ -96,8 +108,8 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
   }
 
   @override
-  Future<String?> piccM1Authority(int type, int blkNo, List<int> pwd,
-      List<int> serialNo) async {
+  Future<String?> piccM1Authority(
+      int type, int blkNo, List<int> pwd, List<int> serialNo) async {
     final Map<String, dynamic> args = <String, dynamic>{
       'type': type,
       'blkNo': blkNo,
@@ -175,8 +187,8 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
   }
 
   @override
-  Future<String?> printInitWithParams(int gray, int fontHeight, int fontWidth,
-      int fontZoom) async {
+  Future<String?> printInitWithParams(
+      int gray, int fontHeight, int fontWidth, int fontZoom) async {
     final Map<String, dynamic> args = <String, dynamic>{
       'gray': gray,
       'fontHeight': fontHeight,
@@ -188,8 +200,8 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
   }
 
   @override
-  Future<String?> printSetFont(int asciiFontHeight, int extendFontHeight,
-      int zoom) async {
+  Future<String?> printSetFont(
+      int asciiFontHeight, int extendFontHeight, int zoom) async {
     final Map<String, dynamic> args = <String, dynamic>{
       'asciiFontHeight': asciiFontHeight,
       'extendFontHeight': extendFontHeight,
@@ -278,7 +290,8 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
   }
 
   @override
-  Future<String?> printCutQrCodeStr(String contents,
+  Future<String?> printCutQrCodeStr(
+      String contents,
       String printTxt,
       int distance,
       int desiredWidth,
@@ -406,13 +419,15 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
   @override
   Future<Map<String, dynamic>> printPdf(String pdfPath) async {
     try {
-      final result = await methodChannel.invokeMethod('PrintPdf', {'pdfPath': pdfPath});
+      final result =
+          await methodChannel.invokeMethod('PrintPdf', {'pdfPath': pdfPath});
       return Map<String, dynamic>.from(result);
     } on PlatformException catch (e) {
       print("Failed to print PDF: '${e.message}'.");
       return {'status': 'ERROR', 'message': e.message};
     }
   }
+
   @override
   Future<void> cancelJob(String jobId) async {
     return await methodChannel
@@ -421,7 +436,8 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
 
   @override
   Future<Map<String, dynamic>> retryPrintJob(String jobId) async {
-    final result = await methodChannel.invokeMethod<Map<Object?, Object?>>('RetryJob', {'jobId': jobId});
+    final result = await methodChannel
+        .invokeMethod<Map<Object?, Object?>>('RetryJob', {'jobId': jobId});
     return _convertToStringDynamicMap(result);
   }
 
@@ -436,53 +452,147 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
     }
   }
 
-  Map<String, dynamic> _convertToStringDynamicMap(Map<Object?, Object?>? input) {
+  Map<String, dynamic> _convertToStringDynamicMap(
+      Map<Object?, Object?>? input) {
     if (input == null) return {};
-    return Map<String, dynamic>.fromEntries(
-        input.entries.map((entry) => MapEntry(
+    return Map<String, dynamic>.fromEntries(input.entries.map((entry) =>
+        MapEntry(
             entry.key.toString(),
-            entry.value is Map ? _convertToStringDynamicMap(entry.value as Map<Object?, Object?>) : entry.value
-        ))
-    );
+            entry.value is Map
+                ? _convertToStringDynamicMap(
+                    entry.value as Map<Object?, Object?>)
+                : entry.value)));
   }
 
+  @override
+  Future<Map<String, dynamic>?> getPrintStats() async {
+    try {
+      final Map<dynamic, dynamic>? result = await methodChannel
+          .invokeMethod<Map<dynamic, dynamic>>('GetPrintStats');
+      // print("Result: $result");
 
+      // Parsing the updated structure
+      int totalPagesPrinted = result?['totalPagesPrinted'];
+      int totalPagesUnprinted = result?['totalPagesUnprinted'];
+      Map<String, dynamic> jobs = result?['jobs'].cast<String, dynamic>();
+
+      // // Logging the basic stats
+      // print('Total pages printed: $totalPagesPrinted');
+      // print('Total pages unprinted: $totalPagesUnprinted');
+      //
+      // // Iterating over jobs to log their details
+      // jobs.forEach((jobId, jobDetails) {
+      //   print('Job ID: $jobId');
+      //   print('Pages: ${jobDetails['pages']}');
+      //   print('Copies: ${jobDetails['copies']}');
+      //   print('Creation Time: ${DateTime.fromMillisecondsSinceEpoch(jobDetails['creationTime'])}');
+      //   print('Is Blocked: ${jobDetails['isBlocked']}');
+      //   print('Is Cancelled: ${jobDetails['isCancelled']}');
+      //   print('Is Completed: ${jobDetails['isCompleted']}');
+      //   print('Is Failed: ${jobDetails['isFailed']}');
+      //   print('Is Queued: ${jobDetails['isQueued']}');
+      //   print('Is Started: ${jobDetails['isStarted']}');
+      // });
+
+      // Returning the parsed result
+      return result?.map((key, value) => MapEntry(key as String, value));
+    } catch (e) {
+      // print("Error fetching print stats: $e");
+      return null;
+    }
+  }
+
+  // Add scanner methods
+  @override
+  Future<String?> configureScannerSettings({
+    int? trigMode,
+    int? scanMode,
+    int? scanPower,
+    int? autoEnter,
+  }) async {
+    try {
+      return await methodChannel
+          .invokeMethod<String>('configureScannerSettings', {
+        'trigMode': trigMode,
+        'scanMode': scanMode,
+        'scanPower': scanPower,
+        'autoEnter': autoEnter,
+      });
+    } on PlatformException catch (e) {
+      throw "Failed to configure scanner: ${e.message}";
+    }
+  }
 
   @override
- Future<Map<String, dynamic>?> getPrintStats() async {
-  try {
-    final Map<dynamic, dynamic>? result = await methodChannel.invokeMethod<Map<dynamic, dynamic>>('GetPrintStats');
-    // print("Result: $result");
+  Future<String?> startScanner() async {
+    try {
+      return await methodChannel.invokeMethod<String>('startScanner');
+    } on PlatformException catch (e) {
+      throw "Failed to start scanner: ${e.message}";
+    }
+  }
 
-    // Parsing the updated structure
-    int totalPagesPrinted = result?['totalPagesPrinted'];
-    int totalPagesUnprinted = result?['totalPagesUnprinted'];
-    Map<String, dynamic> jobs = result?['jobs'].cast<String, dynamic>();
+  @override
+  Future<String?> stopScanner() async {
+    try {
+      return await methodChannel.invokeMethod<String>('stopScanner');
+    } on PlatformException catch (e) {
+      throw "Failed to stop scanner: ${e.message}";
+    }
+  }
 
-    // // Logging the basic stats
-    // print('Total pages printed: $totalPagesPrinted');
-    // print('Total pages unprinted: $totalPagesUnprinted');
-    //
-    // // Iterating over jobs to log their details
-    // jobs.forEach((jobId, jobDetails) {
-    //   print('Job ID: $jobId');
-    //   print('Pages: ${jobDetails['pages']}');
-    //   print('Copies: ${jobDetails['copies']}');
-    //   print('Creation Time: ${DateTime.fromMillisecondsSinceEpoch(jobDetails['creationTime'])}');
-    //   print('Is Blocked: ${jobDetails['isBlocked']}');
-    //   print('Is Cancelled: ${jobDetails['isCancelled']}');
-    //   print('Is Completed: ${jobDetails['isCompleted']}');
-    //   print('Is Failed: ${jobDetails['isFailed']}');
-    //   print('Is Queued: ${jobDetails['isQueued']}');
-    //   print('Is Started: ${jobDetails['isStarted']}');
-    // });
+  @override
+  Future<String?> setScannerMode(int mode) async {
+    try {
+      return await methodChannel.invokeMethod<String>('setScannerMode', {
+        'mode': mode,
+      });
+    } on PlatformException catch (e) {
+      throw "Failed to set scanner mode: ${e.message}";
+    }
+  }
 
-    // Returning the parsed result
-    return result?.map((key, value) => MapEntry(key as String, value));
-  } catch (e) {
-    // print("Error fetching print stats: $e");
-    return null;
+  @override
+  Future<String?> openScanner() async {
+    try {
+      return await methodChannel.invokeMethod<String>('openScanner');
+    } on PlatformException catch (e) {
+      throw "Failed to open scanner: ${e.message}";
+    }
+  }
+
+  @override
+  Future<String?> closeScanner() async {
+    try {
+      return await methodChannel.invokeMethod<String>('closeScanner');
+    } on PlatformException catch (e) {
+      throw "Failed to close scanner: ${e.message}";
+    }
+  }
+
+  // Add getter for scan results stream
+  @override
+  Stream<ScanResult> get scanResults => _scanController.stream;
+
+  void dispose() {
+    _progressController.close();
+    _scanController.close();
   }
 }
 
+// Model class for scan results
+class ScanResult {
+  final String result;
+  final int length;
+  final int encodeType;
+
+  ScanResult({
+    required this.result,
+    required this.length,
+    required this.encodeType,
+  });
+
+  @override
+  String toString() =>
+      'ScanResult(result: $result, length: $length, encodeType: $encodeType)';
 }

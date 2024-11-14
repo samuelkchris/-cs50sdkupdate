@@ -5,10 +5,14 @@ import 'cs50sdkupdate_method_channel.dart';
 import 'cs50sdkupdate_platform_interface.dart';
 
 class Cs50sdkupdate {
-
   final _progressController = StreamController<Map<String, int>>.broadcast();
 
   Stream<Map<String, int>> get progressStream => _progressController.stream;
+
+  final _scanController = StreamController<ScanResult>.broadcast();
+
+  Stream<ScanResult> get scanResultsStream => _scanController.stream;
+
 
   Future<void> initialize() async {
     await MethodChannelCs50sdkupdate().initialize();
@@ -21,6 +25,10 @@ class Cs50sdkupdate {
     });
 
     print('Current Page: $currentPage, Total Pages: $totalPages');
+  }
+
+  void updateScanResults(ScanResult scanResult) {
+    _scanController.add(scanResult);
   }
 
   void dispose() {
@@ -260,7 +268,7 @@ class Cs50sdkupdate {
     return Cs50sdkupdatePlatform.instance.restartPrintJob(jobId);
   }
 
-  Future<Map<String, dynamic>>  printPdf(String pdfPath) {
+  Future<Map<String, dynamic>> printPdf(String pdfPath) {
     return Cs50sdkupdatePlatform.instance.printPdf(pdfPath);
   }
 
@@ -292,6 +300,47 @@ class Cs50sdkupdate {
   }
 
   Stream<Map<String, dynamic>> get printProgressStream {
-    return (Cs50sdkupdatePlatform.instance as MethodChannelCs50sdkupdate).printProgressStream;
+    return (Cs50sdkupdatePlatform.instance as MethodChannelCs50sdkupdate)
+        .printProgressStream;
+  }
+
+  Stream<ScanResult> get scanResults {
+    return (Cs50sdkupdatePlatform.instance as MethodChannelCs50sdkupdate)
+        .scanResults;
+  }
+
+  static Future<String?> configureScannerSettings({
+    int? trigMode,
+    int? scanMode,
+    int? scanPower,
+    int? autoEnter,
+  }) {
+    return Cs50sdkupdatePlatform.instance.configureScannerSettings(
+      trigMode: trigMode,
+      scanMode: scanMode,
+      scanPower: scanPower,
+      autoEnter: autoEnter,
+    );
+  }
+
+  static Future<String?> startScanner() {
+    return Cs50sdkupdatePlatform.instance.startScanner();
+  }
+
+  static Future<String?> stopScanner() {
+    return Cs50sdkupdatePlatform.instance.stopScanner();
+  }
+
+  static Future<String?> setScannerMode(int mode) {
+    return Cs50sdkupdatePlatform.instance.setScannerMode(mode);
+  }
+
+
+  static Future<String?> openScanner() {
+    return Cs50sdkupdatePlatform.instance.openScanner();
+  }
+
+  static Future<String?> closeScanner() {
+    return Cs50sdkupdatePlatform.instance.closeScanner();
   }
 }

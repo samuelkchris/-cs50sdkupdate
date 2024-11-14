@@ -2,22 +2,33 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:cs50sdkupdate/cs50sdkupdate.dart';
+import 'package:cs50sdkupdate/cs50sdkupdate_method_channel.dart';
 import 'package:cs50sdkupdate_example/pdf_printer.dart';
 import 'package:cs50sdkupdate_example/print_history.dart';
 import 'package:cs50sdkupdate_example/progress.dart';
+import 'package:cs50sdkupdate_example/scanner_provider.dart';
+import 'package:cs50sdkupdate_example/scannner_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:provider/provider.dart';
 
 import 'editor.dart';
 import 'nfc_dialog.dart';
 import 'nfc_scanner.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ScannerDataProvider()),
+      ],
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -53,6 +64,13 @@ class _HomePageState extends State<HomePage> {
   final _cs50sdkupdatePlugin = Cs50sdkupdate();
   late PrintJobManager _printJobManager;
   List<Map<String, dynamic>> _printJobs = [];
+  String _lastScanResult = '';
+  bool _isScanning = false;
+  StreamSubscription? _scanSubscription;
+  bool _isScannerPowered = false;
+  bool _isContinuousMode = false;
+
+
 
   @override
   void initState() {
@@ -61,6 +79,60 @@ class _HomePageState extends State<HomePage> {
     _printJobManager = PrintJobManager(_cs50sdkupdatePlugin);
   }
 
+  @override
+  void dispose() {
+    if (_isScanning) {
+      Cs50sdkupdate.stopScanner();
+    }
+    _scanSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _toggleScanning() async {
+    try {
+      if (_isScanning) {
+        await Cs50sdkupdate.stopScanner();
+        setState(() => _isScanning = false);
+      } else {
+        setState(() => _isScanning = true);
+        await Cs50sdkupdate.startScanner();
+      }
+    } catch (e) {
+      setState(() => _isScanning = false);
+      _showSnackBar('Error toggling scanner: $e');
+    }
+  }
+
+  Future<void> _setScannerMode(bool continuous) async {
+    try {
+      await Cs50sdkupdate.setScannerMode(continuous ? 1 : 0);
+      setState(() => _isContinuousMode = continuous);
+      _showSnackBar('Scanner set to ${continuous ? 'continuous' : 'normal'} mode');
+    } catch (e) {
+      _showSnackBar('Error setting scanner mode: $e');
+    }
+  }
+
+  Future<void> _toggleScannerPower() async {
+    try {
+      if (_isScannerPowered) {
+        await Cs50sdkupdate.closeScanner();
+        setState(() {
+          _isScannerPowered = false;
+          _isScanning = false;
+        });
+        _showSnackBar('Scanner powered off');
+      } else {
+        await Cs50sdkupdate.openScanner();
+        setState(() {
+          _isScannerPowered = true;
+        });
+        _showSnackBar('Scanner powered on');
+      }
+    } catch (e) {
+      _showSnackBar('Error toggling scanner power: $e');
+    }
+  }
   Future<void> _startMonitoring() async {
     try {
       await _cs50sdkupdatePlugin.startMonitoringPrintJobs();
@@ -282,6 +354,8 @@ class _HomePageState extends State<HomePage> {
       _showSnackBar('Failed to set font: $e');
     }
   }
+
+
 
   Future<void> _printSetGray() async {
     try {
@@ -533,6 +607,51 @@ class _HomePageState extends State<HomePage> {
     ));
   }
 
+  // Add scanner initialization method
+  Future<void> _initializeScanner() async {
+    try {
+      await Cs50sdkupdate.closeScanner(); // Ensure scanner is off initially
+      setState(() => _isScannerPowered = false);
+
+      _scanSubscription = _cs50sdkupdatePlugin.scanResults.listen(
+            (ScanResult result) {
+          setState(() {
+            _lastScanResult = result.result;
+            _isScanning = false;
+          });
+          _showSnackBar('Scanned: ${result.result}');
+        },
+        onError: (error) {
+          setState(() => _isScanning = false);
+          _showSnackBar('Scan error: $error');
+        },
+      );
+    } catch (e) {
+      _showSnackBar('Failed to initialize scanner: $e');
+    }
+  }
+
+  // Add scanner control methods
+  Future<void> _startScanning() async {
+    try {
+      setState(() => _isScanning = true);
+      await Cs50sdkupdate.startScanner();
+    } catch (e) {
+      setState(() => _isScanning = false);
+      _showSnackBar('Failed to start scanning: $e');
+    }
+  }
+
+  Future<void> _stopScanning() async {
+    try {
+      await Cs50sdkupdate.stopScanner();
+      setState(() => _isScanning = false);
+    } catch (e) {
+      _showSnackBar('Failed to stop scanning: $e');
+    }
+  }
+
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -581,7 +700,15 @@ class _HomePageState extends State<HomePage> {
                 _buildButton(Icons.power_settings_new, 'Get Platform Version',
                     _getPlatformVersion),
                 _buildButton(Icons.nfc, 'Initialize PICC', initializePicc),
+                _buildButton(Icons.scanner, 'Initialize Scanner', _initializeScanner),
+                _buildButton(Icons.power_settings_new, 'Toggle Scanner Power',
+                    _toggleScannerPower),
+
               ]),
+
+              // Add scanner section after initialization section
+              const SizedBox(height: 16),
+              _buildScannerSection(),
               const SizedBox(height: 16),
               _buildSection('PICC Operations', [
                 _buildButton(Icons.close, 'Close PICC', closePicc),
@@ -737,6 +864,137 @@ class _HomePageState extends State<HomePage> {
     // ModernPrintStatusScreen(jobManager: _printJobManager),
     // ),
     // );
+  }
+
+  // Add this to your build method, in the Column of sections
+  Widget _buildScannerSection() {
+    return _buildSection(
+      'Scanner Operations',
+      [
+        _buildButton(
+          _isScannerPowered ? Icons.power : Icons.power_off,
+          _isScannerPowered ? 'Power Off Scanner' : 'Power On Scanner',
+          _toggleScannerPower,
+        ),
+        _buildButton(
+          Icons.scanner,
+          'Scanner Screen',
+          (){
+           Navigator.push(
+             context,
+             MaterialPageRoute(builder: (context) => ScannerScreen()),
+           );
+          },
+        ),
+        if (_isScannerPowered) ...[
+          _buildButton(
+            Icons.qr_code_scanner,
+            _isScanning ? 'Stop Scanning' : 'Start Scanning',
+            _isScanning ? _stopScanning : _startScanning,
+          ),
+          Card(
+            elevation: 2,
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Last Scan Result:',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (_isScanning)
+                        const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[200],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      _lastScanResult.isEmpty ? 'No scan yet' : _lastScanResult,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: _lastScanResult.isEmpty ? Colors.grey : Colors.black,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          _buildButton(
+            Icons.settings,
+            'Configure Scanner',
+            _showScannerSettings,
+          ),
+        ],
+      ],
+    );
+  }
+
+  void _showScannerSettings() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Scanner Settings'),
+        content: StatefulBuilder(
+          builder: (context, setState) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SwitchListTile(
+                title: const Text('Continuous Mode'),
+                subtitle: const Text('Scan multiple items without restarting'),
+                value: _isContinuousMode,
+                onChanged: (value) async {
+                  await _setScannerMode(value);
+                  setState(() => _isContinuousMode = value);
+                  Navigator.pop(context);
+                },
+              ),
+              const Divider(),
+              ListTile(
+                title: const Text('Reset Scanner'),
+                subtitle: const Text('Reset to default settings'),
+                onTap: () async {
+                  await Cs50sdkupdate.configureScannerSettings(
+                    trigMode: 0,
+                    scanMode: 3,
+                    scanPower: 1,
+                    autoEnter: 1,
+                  );
+                  setState(() => _isContinuousMode = false);
+                  Navigator.pop(context);
+                  _showSnackBar('Scanner reset to default settings');
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _printExistingPdf() async {

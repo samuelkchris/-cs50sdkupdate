@@ -278,5 +278,36 @@ Future<String?> updatePrintProgress(int currentPage, int totalPages) async {
     throw UnimplementedError('initialize() has not been implemented.');
   }
 
+  Future<String?> configureScannerSettings({
+    int? trigMode,
+    int? scanMode,
+    int? scanPower,
+    int? autoEnter,
+  }) {
+    throw UnimplementedError('configureScannerSettings() has not been implemented.');
+  }
 
+  Future<String?> startScanner() {
+    throw UnimplementedError('startScanner() has not been implemented.');
+  }
+
+  Future<String?> stopScanner() {
+    throw UnimplementedError('stopScanner() has not been implemented.');
+  }
+
+  Future<String?> setScannerMode(int mode) {
+    throw UnimplementedError('setScannerMode() has not been implemented.');
+  }
+
+  Stream<ScanResult> get scanResults {
+    throw UnimplementedError('scanResults has not been implemented.');
+  }
+
+  Future<String?> openScanner() {
+    throw UnimplementedError('openScanner() has not been implemented.');
+  }
+
+  Future<String?> closeScanner() {
+    throw UnimplementedError('closeScanner() has not been implemented.');
+  }
 }

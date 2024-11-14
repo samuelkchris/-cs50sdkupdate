@@ -50,6 +50,12 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import android.content.Intent;
+import android.content.BroadcastReceiver;
+import android.content.IntentFilter;
+import android.os.Handler;
+import android.os.Looper;
+
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.embedding.engine.plugins.activity.ActivityAware;
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding;
@@ -73,6 +79,13 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
     private File printHistoryDir;
     private File printHistoryFile;
 
+    private BroadcastReceiver scannerReceiver;
+    public static final int ENCODE_MODE_NONE = 3;
+    private Handler mainHandler;
+    private boolean isScanning = false;
+    private boolean isContinuousMode = false;
+    private final Object scanLock = new Object();
+
     @Override
     public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
         channel = new MethodChannel(flutterPluginBinding.getBinaryMessenger(), "cs50sdkupdate");
@@ -81,6 +94,7 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
         posApiHelper = PosApiHelper.getInstance();
         executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
         initializePrintHistory();
+        initializeScannerReceiver();
     }
 
     @TargetApi(Build.VERSION_CODES.KITKAT)
@@ -635,11 +649,145 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
         } else if (call.method.equals("reprintDocument")) {
             String documentId = call.argument("documentId");
             reprintDocument(documentId, result);
-        } else {
+        } else if (call.method.equals("configureScannerSettings")) {
+            configureScannerSettings(call, result);
+        } else if (call.method.equals("openScanner")) {
+            try {
+                Intent intent = new Intent("ACTION_BAR_SCANCFG");
+                intent.putExtra("EXTRA_SCAN_POWER", 1);  // 1 for power on
+                intent.putExtra("EXTRA_SCAN_MODE", 3);   // API mode
+                context.sendBroadcast(intent);
+                result.success("Scanner opened successfully");
+            } catch (Exception e) {
+                result.error("OPEN_ERROR", "Failed to open scanner", e.getMessage());
+            }
+        }
+        else if (call.method.equals("closeScanner")) {
+            try {
+                Intent intent = new Intent("ACTION_BAR_SCANCFG");
+                intent.putExtra("EXTRA_SCAN_POWER", 0);  // 0 for power off
+                context.sendBroadcast(intent);
+                result.success("Scanner closed successfully");
+            } catch (Exception e) {
+                result.error("CLOSE_ERROR", "Failed to close scanner", e.getMessage());
+            }
+        }
+        else if (call.method.equals("startScanner")) {
+            startScanning(result);
+        }
+        else if (call.method.equals("stopScanner")) {
+            try {
+                stopScanning();
+                result.success("Scanner stopped");
+            } catch (Exception e) {
+                result.error("STOP_ERROR", "Failed to stop scanner", e.getMessage());
+            }
+        }
+        else if (call.method.equals("setScannerMode")) {
+            try {
+                Integer mode = call.argument("mode");
+                if (mode != null) {
+                    isContinuousMode = (mode == 1);
+                    Intent intent = new Intent("ACTION_BAR_SCANCFG");
+                    intent.putExtra("EXTRA_TRIG_MODE", mode);
+                    context.sendBroadcast(intent);
+                    result.success("Scanner mode set to: " + (isContinuousMode ? "continuous" : "normal"));
+                } else {
+                    result.error("INVALID_ARGUMENT", "Mode cannot be null", null);
+                }
+            } catch (Exception e) {
+                result.error("MODE_ERROR", "Failed to set scanner mode", e.getMessage());
+            }
+        }
+        else {
             result.notImplemented();
         }
 
     }
+    private void initializeScannerReceiver() {
+        if (scannerReceiver == null) {
+            scannerReceiver = new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    synchronized (scanLock) {
+                        try {
+                            if (!isScanning) {
+                                return;
+                            }
+
+                            String scanResult = "";
+                            int length = intent.getIntExtra("EXTRA_SCAN_LENGTH", 0);
+                            int encodeType = intent.getIntExtra("EXTRA_SCAN_ENCODE_MODE", 1);
+
+                            if (encodeType == ENCODE_MODE_NONE) {
+                                byte[] rawData = intent.getByteArrayExtra("EXTRA_SCAN_RAW_DATA");
+                                int rawLength = intent.getIntExtra("EXTRA_SCAN_RAW_DATA_LEN", 0);
+                                scanResult = ByteUtil.bytearrayToHexString(rawData, rawLength);
+                            } else {
+                                scanResult = intent.getStringExtra("EXTRA_SCAN_DATA");
+                            }
+
+                            final Map<String, Object> resultMap = new HashMap<>();
+                            resultMap.put("result", scanResult);
+                            resultMap.put("length", length);
+                            resultMap.put("encodeType", encodeType);
+                            resultMap.put("method", "onScanResult");
+
+//                          print the result
+                            Log.d(TAG, "Scan result: " + scanResult);
+                            Log.d(TAG, "Scan length: " + length);
+                            Log.d(TAG, "Scan encode type: " + encodeType);
+
+                            new Handler(Looper.getMainLooper()).post(() -> channel.invokeMethod("onScanResult", resultMap));
+//                            mainHandler.post(() -> {
+//                                if (channel != null) {
+//                                    channel.invokeMethod("onScanResult", resultMap);
+//                                }
+//                            });
+
+                            // Stop scanning after receiving result in normal mode
+                            if (!isContinuousMode) {
+                                stopScanning();
+                            }
+                        } catch (Exception e) {
+                            Log.e(TAG, "Error processing scan result: " + e.getMessage());
+                        }
+                    }
+                }
+            };
+
+            IntentFilter filter = new IntentFilter("ACTION_BAR_SCAN");
+            context.registerReceiver(scannerReceiver, filter);
+        }
+    }
+
+    private void startScanning(Result result) {
+        synchronized (scanLock) {
+            try {
+                if (!isScanning) {
+                    isScanning = true;
+                    Intent intent = new Intent("ACTION_BAR_TRIGSCAN");
+                    context.sendBroadcast(intent);
+                    result.success("Scanner started");
+                } else {
+                    result.error("SCANNER_BUSY", "Scanner is already running", null);
+                }
+            } catch (Exception e) {
+                result.error("START_ERROR", "Failed to start scanner", e.getMessage());
+            }
+        }
+    }
+
+    private void stopScanning() {
+        synchronized (scanLock) {
+            if (isScanning) {
+                isScanning = false;
+                Intent intent = new Intent("ACTION_BAR_TRIGSCAN");
+                context.sendBroadcast(intent);
+            }
+        }
+    }
+
 
     private void handleGetPlatformVersion(Result result) {
         byte[] version = new byte[10];
@@ -1043,10 +1191,45 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
         }
     }
 
+    private void configureScannerSettings(MethodCall call, Result result) {
+        try {
+            Intent intent = new Intent("ACTION_BAR_SCANCFG");
+
+            Integer trigMode = call.argument("trigMode");
+            Integer scanMode = call.argument("scanMode");
+            Integer scanPower = call.argument("scanPower");
+            Integer autoEnter = call.argument("autoEnter");
+
+            if (trigMode != null) intent.putExtra("EXTRA_TRIG_MODE", trigMode);
+            if (scanMode != null) intent.putExtra("EXTRA_SCAN_MODE", scanMode);
+            if (scanPower != null) intent.putExtra("EXTRA_SCAN_POWER", scanPower);
+            if (autoEnter != null) intent.putExtra("EXTRA_SCAN_AUTOENT", autoEnter);
+
+            context.sendBroadcast(intent);
+            result.success("Scanner configured successfully");
+        } catch (Exception e) {
+            result.error("CONFIG_ERROR", "Failed to configure scanner", e.getMessage());
+        }
+    }
+
+
     @Override
     public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
+        synchronized (scanLock) {
+            if (isScanning) {
+                stopScanning();
+            }
+            if (scannerReceiver != null) {
+                try {
+                    context.unregisterReceiver(scannerReceiver);
+                } catch (Exception e) {
+                    Log.e(TAG, "Error unregistering scanner receiver: " + e.getMessage());
+                }
+                scannerReceiver = null;
+            }
+        }
         channel.setMethodCallHandler(null);
-        executorService.shutdown();
+        channel = null;
     }
 
     @Override

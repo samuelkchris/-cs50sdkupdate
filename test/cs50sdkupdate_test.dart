@@ -377,6 +377,46 @@ class MockCs50sdkupdatePlatform
     throw UnimplementedError();
   }
 
+  @override
+  Future<String?> configureScannerSettings({int? trigMode, int? scanMode, int? scanPower, int? autoEnter}) {
+    // TODO: implement configureScannerSettings
+    throw UnimplementedError();
+  }
+
+  @override
+  // TODO: implement scanResults
+  Stream<ScanResult> get scanResults => throw UnimplementedError();
+
+  @override
+  Future<String?> setScannerMode(int mode) {
+    // TODO: implement setScannerMode
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<String?> startScanner() {
+    // TODO: implement startScanner
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<String?> stopScanner() {
+    // TODO: implement stopScanner
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<String?> closeScanner() {
+    // TODO: implement closeScanner
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<String?> openScanner() {
+    // TODO: implement openScanner
+    throw UnimplementedError();
+  }
+
 
   
 }
