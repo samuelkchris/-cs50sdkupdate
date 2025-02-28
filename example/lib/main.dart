@@ -16,8 +16,6 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 
-import 'editor.dart';
-import 'nfc_dialog.dart';
 import 'nfc_scanner.dart';
 
 void main() {
@@ -63,20 +61,44 @@ class _HomePageState extends State<HomePage> {
   String _piccStatus = 'PICC not initialized';
   final _cs50sdkupdatePlugin = Cs50sdkupdate();
   late PrintJobManager _printJobManager;
-  List<Map<String, dynamic>> _printJobs = [];
+  List<PrintJob> _printJobs = [];
   String _lastScanResult = '';
   bool _isScanning = false;
   StreamSubscription? _scanSubscription;
   bool _isScannerPowered = false;
   bool _isContinuousMode = false;
 
-
-
   @override
   void initState() {
     super.initState();
-    _startMonitoring();
+    _initializePlugin();
     _printJobManager = PrintJobManager(_cs50sdkupdatePlugin);
+  }
+
+  Future<void> _initializePlugin() async {
+    await _cs50sdkupdatePlugin.initialize();
+
+    // Subscribe to scanner results
+    _scanSubscription = _cs50sdkupdatePlugin.scanResultsStream.listen(
+          (ScanResult result) {
+        setState(() {
+          _lastScanResult = result.result;
+          _isScanning = false;
+        });
+        _showSnackBar('Scanned: ${result.result}');
+      },
+      onError: (error) {
+        setState(() => _isScanning = false);
+        _showSnackBar('Scan error: $error');
+      },
+    );
+
+    // Subscribe to print jobs from print manager
+    _printJobManager.jobsStream.listen((jobs) {
+      setState(() {
+        _printJobs = jobs;
+      });
+    });
   }
 
   @override
@@ -85,6 +107,8 @@ class _HomePageState extends State<HomePage> {
       Cs50sdkupdate.stopScanner();
     }
     _scanSubscription?.cancel();
+    _printJobManager.dispose();
+    _cs50sdkupdatePlugin.dispose();
     super.dispose();
   }
 
@@ -133,41 +157,27 @@ class _HomePageState extends State<HomePage> {
       _showSnackBar('Error toggling scanner power: $e');
     }
   }
-  Future<void> _startMonitoring() async {
-    try {
-      await _cs50sdkupdatePlugin.startMonitoringPrintJobs();
-      _refreshPrintJobs();
-    } catch (e) {
-      print('Failed to start monitoring: $e');
-    }
-  }
 
   Future<void> _refreshPrintJobs() async {
+    // The jobs are now managed by PrintJobManager and updated via the stream
+    _showSnackBar('Print jobs refreshed');
+  }
+
+  Future<void> _cancelJob(String jobId) async {
     try {
-      final jobs = await _cs50sdkupdatePlugin.getAllPrintJobs();
-      setState(() {
-        _printJobs = jobs;
-      });
+      await _printJobManager.cancelJob(jobId);
+      _showSnackBar('Job cancelled successfully');
     } catch (e) {
-      print('Failed to get print jobs: $e');
+      _showSnackBar('Failed to cancel job: $e');
     }
   }
 
-  Future<void> _cancelPrintJob(String jobId) async {
+  Future<void> _retryFailedJobs() async {
     try {
-      await _cs50sdkupdatePlugin.cancelPrintJob(jobId);
-      _refreshPrintJobs();
+      await _printJobManager.retryFailedJobs();
+      _showSnackBar('Retrying failed jobs');
     } catch (e) {
-      print('Failed to cancel print job: $e');
-    }
-  }
-
-  Future<void> _restartPrintJob(String jobId) async {
-    try {
-      await _cs50sdkupdatePlugin.restartPrintJob(jobId);
-      _refreshPrintJobs();
-    } catch (e) {
-      print('Failed to restart print job: $e');
+      _showSnackBar('Failed to retry jobs: $e');
     }
   }
 
@@ -305,10 +315,11 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _printText() async {
     try {
+      await _cs50sdkupdatePlugin.printInit();
       await _cs50sdkupdatePlugin.printStr('Hello, World!\n');
       await _cs50sdkupdatePlugin.printStr('This is a test print.\n');
+      await _cs50sdkupdatePlugin.printStart();
 
-      await _printJobManager.printAllPages();
       _showSnackBar('Text printed successfully');
     } catch (e) {
       _showSnackBar('Failed to print text: $e');
@@ -354,8 +365,6 @@ class _HomePageState extends State<HomePage> {
       _showSnackBar('Failed to set font: $e');
     }
   }
-
-
 
   Future<void> _printSetGray() async {
     try {
@@ -612,20 +621,7 @@ class _HomePageState extends State<HomePage> {
     try {
       await Cs50sdkupdate.closeScanner(); // Ensure scanner is off initially
       setState(() => _isScannerPowered = false);
-
-      _scanSubscription = _cs50sdkupdatePlugin.scanResults.listen(
-            (ScanResult result) {
-          setState(() {
-            _lastScanResult = result.result;
-            _isScanning = false;
-          });
-          _showSnackBar('Scanned: ${result.result}');
-        },
-        onError: (error) {
-          setState(() => _isScanning = false);
-          _showSnackBar('Scan error: $error');
-        },
-      );
+      _showSnackBar('Scanner initialized');
     } catch (e) {
       _showSnackBar('Failed to initialize scanner: $e');
     }
@@ -651,155 +647,184 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+        appBar: AppBar(
         title: const Text('CS50 SDK Update Demo'),
-        elevation: 0,
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Colors.blue.shade100, Colors.blue.shade300],
+    elevation: 0,
+    ),
+    body: Container(
+    decoration: BoxDecoration(
+    gradient: LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Colors.blue.shade100, Colors.blue.shade300],
+    ),
+    ),
+    child: SingleChildScrollView(
+    padding: const EdgeInsets.all(16.0),
+    child: Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: <Widget>[
+    Card(
+    elevation: 5,
+    shape: RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(15)),
+    child: Padding(
+    padding: const EdgeInsets.all(16.0),
+    child: Column(
+    children: [
+    Text('Platform: $_platformVersion',
+    style: const TextStyle(fontSize: 16)),
+    const SizedBox(height: 8),
+    Text('PICC Status: $_piccStatus',
+    style: const TextStyle(fontSize: 16)),
+    const SizedBox(height: 8),
+    Text('Polling: $_pollingData',
+    style: const TextStyle(fontSize: 16)),
+    const SizedBox(height: 8),
+    Text('Printer: $_printStatus',
+    style: const TextStyle(fontSize: 16)),
+    ],
+    ),
+    ),
+    ),
+    const SizedBox(height: 16),
+    _buildSection('Initialization', [
+    _buildButton(Icons.power_settings_new, 'Get Platform Version',
+    _getPlatformVersion),
+    _buildButton(Icons.nfc, 'Initialize PICC', initializePicc),
+    _buildButton(Icons.scanner, 'Initialize Scanner', _initializeScanner),
+    _buildButton(Icons.power_settings_new, 'Toggle Scanner Power',
+    _toggleScannerPower),
+    ]),
+
+    // Add scanner section after initialization section
+    const SizedBox(height: 16),
+    _buildScannerSection(),
+    const SizedBox(height: 16),
+    _buildSection('PICC Operations', [
+    _buildButton(Icons.close, 'Close PICC', closePicc),
+    _buildButton(Icons.remove_circle, 'Remove PICC', removePicc),
+    _buildButton(Icons.check_circle, 'PICC Check', piccCheck),
+    _buildButton(Icons.loop, 'Start Polling', startNFCScanning),
+    ]),
+    const SizedBox(height: 16),
+    _buildSection('Other Operations', [
+    _buildButton(Icons.code, 'Execute Commands', executeCommands),
+    _buildButton(
+    Icons.memory, 'SAM AV2 Init', executePiccSamAv2Init),
+    _buildButton(Icons.nfc, 'Execute NFC', executeNfc),
+    ]),
+    const SizedBox(height: 16),
+    _buildSection('Printer Initialization', [
+    _buildButton(Icons.print, 'Initialize Printer', _initPrinter),
+    _buildButton(
+    Icons.settings, 'Init with Params', _initPrinterWithParams),
+    ]),
+    const SizedBox(height: 16),
+    _buildSection('Printer Settings', [
+    _buildButton(Icons.font_download, 'Set Font', _printSetFont),
+    _buildButton(
+    Icons.format_color_fill, 'Set Gray', _printSetGray),
+    _buildButton(Icons.space_bar, 'Set Space', _printSetSpace),
+    _buildButton(
+    Icons.font_download_outlined, 'Get Font', _printGetFont),
+    _buildButton(Icons.height, 'Set Step', _printStep),
+    _buildButton(Icons.battery_charging_full, 'Set Voltage',
+    _printSetVoltage),
+    _buildButton(Icons.power, 'Set Charge', _printIsCharge),
+    _buildButton(
+    Icons.linear_scale, 'Set Line Pixel', _printSetLinPixelDis),
+    _buildButton(Icons.format_align_left, 'Set Left Indent',
+    _printSetLeftIndent),
+    _buildButton(
+    Icons.format_align_center, 'Set Alignment', _printSetAlign),
+    _buildButton(Icons.space_bar_outlined, 'Set Char Space',
+    _printCharSpace),
+    _buildButton(Icons.format_line_spacing, 'Set Line Space',
+    _printSetLineSpace),
+    _buildButton(Icons.format_indent_increase, 'Set Left Space',
+    _printSetLeftSpace),
+    _buildButton(Icons.speed, 'Set Speed', _printSetSpeed),
+    _buildButton(Icons.mode, 'Set Mode', _printSetMode),
+    _buildButton(Icons.format_underlined, 'Set Underline',
+    _printSetUnderline),
+    _buildButton(Icons.flip, 'Set Reverse', _printSetReverse),
+    _buildButton(Icons.format_bold, 'Set Bold', _printSetBold),
+    ]),
+    const SizedBox(height: 16),
+    _buildSection('Printing Operations', [
+    _buildButton(Icons.text_fields, 'Print Text', _printStr),
+    _buildButton(Icons.image, 'Print Bitmap', _printBmp),
+    _buildButton(Icons.qr_code, 'Print Barcode', _printBarcode),
+    _buildButton(Icons.qr_code_2, 'Print QR Code', _printQRCode),
+    _buildButton(Icons.qr_code_scanner, 'Print QR with Text',
+    _printCutQRCodeStr),
+    _buildButton(Icons.play_arrow, 'Start Print', _printStart),
+    _buildButton(Icons.logo_dev, 'Print Logo', _printLogo),
+    _buildButton(
+    Icons.text_snippet_rounded, 'Print All Text', _printText),
+    _buildButton(Icons.picture_as_pdf, 'Print PDF', _printPdf),
+    _buildButton(Icons.picture_as_pdf, 'Print Existing PDF',
+    _printExistingPdf),
+    _buildButton(Icons.add_to_photos, 'Create & Print Simple PDF',
+    _createAndPrintSimplePdf),
+    ]),
+    const SizedBox(height: 16),
+      _buildSection('Printer Utilities', [
+        _buildButton(Icons.check_circle_outline, 'Check Status',
+            _printCheckStatus),
+        _buildButton(
+            Icons.vertical_align_bottom, 'Feed Paper', _printFeedPaper),
+        _buildButton(
+            Icons.label_outline, 'Locate Label', _printLabLocate),
+        _buildButton(
+            Icons.list, 'Print Status', _viewPrintStatus),
+      ]),
+      const SizedBox(height: 16),
+      _buildSection('Print Job Operations', [
+        _buildButton(
+            Icons.refresh, 'Refresh Print Jobs', _refreshPrintJobs),
+        _buildButton(Icons.list, 'View Print History', _viewPrintJobs),
+        _buildButton(Icons.refresh, 'Retry Failed Jobs', _retryFailedJobs),
+      ]),
+    ],
+    ),
+    ),
+    ),
+    );
+  }
+
+  void _viewPrintStatus() {
+    // Show a dialog with active print jobs
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Print Status'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 300,
+          child: ListView(
+            children: _printJobs.map((job) => ListTile(
+              title: Text(job.name),
+              subtitle: Text(job.statusMessage),
+              leading: Icon(job.statusIcon, color: job.statusColor),
+              trailing: job.isActive ?
+              IconButton(
+                icon: const Icon(Icons.cancel),
+                onPressed: () => _cancelJob(job.id),
+              ) : null,
+            )).toList(),
           ),
         ),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Card(
-                elevation: 5,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(15)),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    children: [
-                      Text('Platform: $_platformVersion',
-                          style: const TextStyle(fontSize: 16)),
-                      const SizedBox(height: 8),
-                      Text('PICC Status: $_piccStatus',
-                          style: const TextStyle(fontSize: 16)),
-                      const SizedBox(height: 8),
-                      Text('Polling: $_pollingData',
-                          style: const TextStyle(fontSize: 16)),
-                      const SizedBox(height: 8),
-                      Text('Printer: $_printStatus',
-                          style: const TextStyle(fontSize: 16)),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              _buildSection('Initialization', [
-                _buildButton(Icons.power_settings_new, 'Get Platform Version',
-                    _getPlatformVersion),
-                _buildButton(Icons.nfc, 'Initialize PICC', initializePicc),
-                _buildButton(Icons.scanner, 'Initialize Scanner', _initializeScanner),
-                _buildButton(Icons.power_settings_new, 'Toggle Scanner Power',
-                    _toggleScannerPower),
-
-              ]),
-
-              // Add scanner section after initialization section
-              const SizedBox(height: 16),
-              _buildScannerSection(),
-              const SizedBox(height: 16),
-              _buildSection('PICC Operations', [
-                _buildButton(Icons.close, 'Close PICC', closePicc),
-                _buildButton(Icons.remove_circle, 'Remove PICC', removePicc),
-                _buildButton(Icons.check_circle, 'PICC Check', piccCheck),
-                _buildButton(Icons.loop, 'Start Polling', startNFCScanning),
-              ]),
-              const SizedBox(height: 16),
-              _buildSection('Other Operations', [
-                _buildButton(Icons.code, 'Execute Commands', executeCommands),
-                _buildButton(
-                    Icons.memory, 'SAM AV2 Init', executePiccSamAv2Init),
-                _buildButton(Icons.nfc, 'Execute NFC', executeNfc),
-              ]),
-              const SizedBox(height: 16),
-              _buildSection('Printer Initialization', [
-                _buildButton(Icons.print, 'Initialize Printer', _initPrinter),
-                _buildButton(
-                    Icons.settings, 'Init with Params', _initPrinterWithParams),
-              ]),
-              const SizedBox(height: 16),
-              _buildSection('Printer Settings', [
-                _buildButton(Icons.font_download, 'Set Font', _printSetFont),
-                _buildButton(
-                    Icons.format_color_fill, 'Set Gray', _printSetGray),
-                _buildButton(Icons.space_bar, 'Set Space', _printSetSpace),
-                _buildButton(
-                    Icons.font_download_outlined, 'Get Font', _printGetFont),
-                _buildButton(Icons.height, 'Set Step', _printStep),
-                _buildButton(Icons.battery_charging_full, 'Set Voltage',
-                    _printSetVoltage),
-                _buildButton(Icons.power, 'Set Charge', _printIsCharge),
-                _buildButton(
-                    Icons.linear_scale, 'Set Line Pixel', _printSetLinPixelDis),
-                _buildButton(Icons.format_align_left, 'Set Left Indent',
-                    _printSetLeftIndent),
-                _buildButton(
-                    Icons.format_align_center, 'Set Alignment', _printSetAlign),
-                _buildButton(Icons.space_bar_outlined, 'Set Char Space',
-                    _printCharSpace),
-                _buildButton(Icons.format_line_spacing, 'Set Line Space',
-                    _printSetLineSpace),
-                _buildButton(Icons.format_indent_increase, 'Set Left Space',
-                    _printSetLeftSpace),
-                _buildButton(Icons.speed, 'Set Speed', _printSetSpeed),
-                _buildButton(Icons.mode, 'Set Mode', _printSetMode),
-                _buildButton(Icons.format_underlined, 'Set Underline',
-                    _printSetUnderline),
-                _buildButton(Icons.flip, 'Set Reverse', _printSetReverse),
-                _buildButton(Icons.format_bold, 'Set Bold', _printSetBold),
-                _buildButton(
-                    Icons.edit_note_outlined, 'Document Editor', _openEditor)
-              ]),
-              const SizedBox(height: 16),
-              _buildSection('Printing Operations', [
-                _buildButton(Icons.text_fields, 'Print Text', _printStr),
-                _buildButton(Icons.image, 'Print Bitmap', _printBmp),
-                _buildButton(Icons.qr_code, 'Print Barcode', _printBarcode),
-                _buildButton(Icons.qr_code_2, 'Print QR Code', _printQRCode),
-                _buildButton(Icons.qr_code_scanner, 'Print QR with Text',
-                    _printCutQRCodeStr),
-                _buildButton(Icons.play_arrow, 'Start Print', _printStart),
-                _buildButton(Icons.logo_dev, 'Print Logo', _printLogo),
-                _buildButton(
-                    Icons.text_snippet_rounded, 'Print All Text', _printText),
-                _buildButton(Icons.picture_as_pdf, 'Print PDF', _printPdf),
-                _buildButton(Icons.picture_as_pdf, 'Print Existing PDF',
-                    _printExistingPdf),
-                _buildButton(Icons.add_to_photos, 'Create & Print Simple PDF',
-                    _createAndPrintSimplePdf),
-              ]),
-              const SizedBox(height: 16),
-              _buildSection('Printer Utilities', [
-                _buildButton(Icons.check_circle_outline, 'Check Status',
-                    _printCheckStatus),
-                _buildButton(
-                    Icons.vertical_align_bottom, 'Feed Paper', _printFeedPaper),
-                _buildButton(
-                    Icons.label_outline, 'Locate Label', _printLabLocate),
-                _buildButton(
-                    Icons.list, 'Print Status', _openPrintStatusScreen),
-              ]),
-              const SizedBox(height: 16),
-              _buildSection('Print Job Operations', [
-                _buildButton(
-                    Icons.refresh, 'Refresh Print Jobs', _refreshPrintJobs),
-                _buildButton(Icons.list, 'View Print Jobs', _viewPrintJobs),
-              ]),
-            ],
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -807,7 +832,7 @@ class _HomePageState extends State<HomePage> {
   void _viewPrintJobs() {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => PrintHistoryScreen()),
+      MaterialPageRoute(builder: (context) =>  PrintHistoryScreen()),
     );
   }
 
@@ -847,25 +872,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  void _openEditor() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) =>
-            CustomDocumentEditor(
-              printPlugin: _cs50sdkupdatePlugin,
-              jobManager: _printJobManager,
-            ),
-      ),
-    );
-  }
-
-  void _openPrintStatusScreen() {
-    // ModernPrintStatusScreen(jobManager: _printJobManager),
-    // ),
-    // );
-  }
-
   // Add this to your build method, in the Column of sections
   Widget _buildScannerSection() {
     return _buildSection(
@@ -879,11 +885,11 @@ class _HomePageState extends State<HomePage> {
         _buildButton(
           Icons.scanner,
           'Scanner Screen',
-          (){
-           Navigator.push(
-             context,
-             MaterialPageRoute(builder: (context) => ScannerScreen()),
-           );
+              (){
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => ScannerScreen()),
+            );
           },
         ),
         if (_isScannerPowered) ...[
@@ -1025,12 +1031,6 @@ class _HomePageState extends State<HomePage> {
           );
         },
       );
-
-      // await _printJobManager.printPdf(tempFile.path);
-      // _showSnackBar('PDF printing started');
-      //
-      // // Open the print status screen
-      // _openPrintStatusScreen();
     } catch (e) {
       _showSnackBar('Failed to print PDF: $e');
     }
@@ -1038,17 +1038,14 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _createAndPrintSimplePdf() async {
     try {
-      _showSnackBar('Simple PDF created and printing started');
-      // _pdfPrinter.createAndPrintSimplePdf();
+      _showSnackBar('Creating simple PDF...');
       final results = await createAndPrintSimplePdf();
       final output = await getTemporaryDirectory();
       final file = File('${output.path}/example.pdf');
       await file.writeAsBytes(results);
-      _printJobManager.retryFailedJobs();
 
-      _openPrintStatusScreen();
-
-      // Open the print status screen
+      _showSnackBar('Simple PDF created, starting print job...');
+      await _printJobManager.printPdf(file.path);
     } catch (e) {
       _showSnackBar('Failed to create and print simple PDF: $e');
     }
@@ -1057,59 +1054,54 @@ class _HomePageState extends State<HomePage> {
   Future<Uint8List> createAndPrintSimplePdf() async {
     final pdf = pw.Document();
 
-    for (int i = 0; i < 1; i++) {
-      pdf.addPage(
-        index: 0,
-        pw.Page(
-          pageFormat: const PdfPageFormat(42.0, 111),
-          margin: const pw.EdgeInsets.only(top: 10),
-          build: (pw.Context context) {
-            return pw.Center(
-              child: pw.Container(
-                padding: const pw.EdgeInsets.all(20),
-                decoration: pw.BoxDecoration(
-                  border: pw.Border.all(color: PdfColors.black, width: 2),
-                  borderRadius: pw.BorderRadius.circular(10),
-                ),
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Center(
-                      child: pw.Text(
-                        'Train Ticket',
-                        style: pw.TextStyle(
-                            fontSize: 40, fontWeight: pw.FontWeight.bold),
-                      ),
-                    ),
-                    pw.SizedBox(height: 30),
-                    pw.Divider(thickness: 2),
-                    pw.SizedBox(height: 20),
-                    _buildInfoRow('Passenger Name:', 'Samuel Ssekizinvu'),
-                    _buildInfoRow('Departure Station:', 'Kampala'),
-                    _buildInfoRow('Arrival Station:', 'Nairobi'),
-                    _buildInfoRow('Departure Date:', '2022-12-25'),
-                    _buildInfoRow('Train Number:', '12345'),
-                    _buildInfoRow('Seat Number:', '12A'),
-                    _buildInfoRow('Fare:', 'UGX 100,000'),
-                    pw.SizedBox(height: 30),
-                    if (i == 0) ...[
-                      pw.Center(
-                        child: pw.BarcodeWidget(
-                          barcode: pw.Barcode.qrCode(),
-                          data: 'https://www.example.com/ticket/12345',
-                          width: 200,
-                          height: 200,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
+    pdf.addPage(
+      pw.Page(
+        pageFormat: const PdfPageFormat(42.0 * PdfPageFormat.mm, 111.0 * PdfPageFormat.mm),
+        margin: const pw.EdgeInsets.only(top: 10),
+        build: (pw.Context context) {
+          return pw.Center(
+            child: pw.Container(
+              padding: const pw.EdgeInsets.all(20),
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: PdfColors.black, width: 2),
+                borderRadius: pw.BorderRadius.circular(10),
               ),
-            );
-          },
-        ),
-      );
-    }
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Center(
+                    child: pw.Text(
+                      'Train Ticket',
+                      style: pw.TextStyle(
+                          fontSize: 40, fontWeight: pw.FontWeight.bold),
+                    ),
+                  ),
+                  pw.SizedBox(height: 30),
+                  pw.Divider(thickness: 2),
+                  pw.SizedBox(height: 20),
+                  _buildInfoRow('Passenger Name:', 'Samuel Ssekizinvu'),
+                  _buildInfoRow('Departure Station:', 'Kampala'),
+                  _buildInfoRow('Arrival Station:', 'Nairobi'),
+                  _buildInfoRow('Departure Date:', '2022-12-25'),
+                  _buildInfoRow('Train Number:', '12345'),
+                  _buildInfoRow('Seat Number:', '12A'),
+                  _buildInfoRow('Fare:', 'UGX 100,000'),
+                  pw.SizedBox(height: 30),
+                  pw.Center(
+                    child: pw.BarcodeWidget(
+                      barcode: pw.Barcode.qrCode(),
+                      data: 'https://www.example.com/ticket/12345',
+                      width: 200,
+                      height: 200,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
     return pdf.save();
   }
 
@@ -1143,8 +1135,7 @@ class _HomePageState extends State<HomePage> {
       await _printJobManager.printPdf(tempFile.path);
 
       _showSnackBar('PDF printing started');
-
-      _openPrintStatusScreen();
+      _viewPrintStatus();
     } catch (e) {
       _showSnackBar('Failed to print PDF: $e');
     }

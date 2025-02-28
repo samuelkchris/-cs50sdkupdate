@@ -38,15 +38,10 @@ class ScannerDataProvider extends ChangeNotifier {
 
   /// Getters for the state variables
   bool get isPowered => _isPowered;
-
   bool get isScanning => _isScanning;
-
   bool get isContinuousMode => _isContinuousMode;
-
   String get lastScanResult => _lastScanResult;
-
   List<ScanResult> get scanHistory => _scanHistory;
-
   String? get errorMessage => _errorMessage;
 
   /// Constructor that initializes the scanner
@@ -58,14 +53,13 @@ class ScannerDataProvider extends ChangeNotifier {
   Future<void> _initializeScanner() async {
     try {
       await _cs50sdkupdate.initialize();
-      platform.setMethodCallHandler(_handleMethod);
 
-      _scanSubscription = _cs50sdkupdate.scanResults.listen(
+      _scanSubscription = _cs50sdkupdate.scanResultsStream.listen(
         _handleScanResult,
         onError: _handleError,
       );
 
-// Initialize scanner in powered off state
+      // Initialize scanner in powered off state
       await Cs50sdkupdate.closeScanner();
       _isPowered = false;
       notifyListeners();
@@ -102,22 +96,6 @@ class ScannerDataProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Handles method calls from the native side
-  Future<dynamic> _handleMethod(MethodCall call) async {
-    switch (call.method) {
-      case 'onScanResult':
-        final result = ScanResult(
-          result: call.arguments['result'] as String,
-          length: call.arguments['length'] as int,
-          encodeType: call.arguments['encodeType'] as int,
-        );
-        _handleScanResult(result);
-        break;
-      default:
-        print('Unhandled method ${call.method}');
-    }
-  }
-
   /// Powers on the scanner
   Future<void> powerOn() async {
     try {
@@ -133,6 +111,9 @@ class ScannerDataProvider extends ChangeNotifier {
   /// Powers off the scanner
   Future<void> powerOff() async {
     try {
+      if (_isScanning) {
+        await stopScanning();
+      }
       await Cs50sdkupdate.closeScanner();
       _isPowered = false;
       _isScanning = false;
@@ -146,8 +127,12 @@ class ScannerDataProvider extends ChangeNotifier {
   /// Starts scanning
   Future<void> startScanning() async {
     if (!_isPowered) {
-      _handleError('Scanner is not powered on');
-      return;
+      try {
+        await powerOn();
+      } catch (e) {
+        _handleError('Scanner could not be powered on: $e');
+        return;
+      }
     }
 
     try {
@@ -162,6 +147,8 @@ class ScannerDataProvider extends ChangeNotifier {
 
   /// Stops scanning
   Future<void> stopScanning() async {
+    if (!_isScanning) return;
+
     try {
       await Cs50sdkupdate.stopScanner();
       _isScanning = false;
@@ -184,6 +171,33 @@ class ScannerDataProvider extends ChangeNotifier {
     }
   }
 
+  /// Configures scanner settings
+  Future<void> configureScanner({
+    int? trigMode,
+    int? scanMode,
+    int? scanPower,
+    int? autoEnter,
+  }) async {
+    try {
+      await Cs50sdkupdate.configureScannerSettings(
+        trigMode: trigMode,
+        scanMode: scanMode,
+        scanPower: scanPower,
+        autoEnter: autoEnter,
+      );
+
+      // Update continuous mode if trigMode was provided
+      if (trigMode != null) {
+        _isContinuousMode = trigMode == 1;
+      }
+
+      _errorMessage = null;
+      notifyListeners();
+    } catch (e) {
+      _handleError(e);
+    }
+  }
+
   /// Clears the scan history
   void clearHistory() {
     _scanHistory = [];
@@ -194,8 +208,9 @@ class ScannerDataProvider extends ChangeNotifier {
   @override
   void dispose() {
     _scanSubscription?.cancel();
-    stopScanning();
-    powerOff();
+    stopScanning()
+        .then((_) => powerOff())
+        .catchError((e) => print('Error during disposal: $e'));
     super.dispose();
   }
 }

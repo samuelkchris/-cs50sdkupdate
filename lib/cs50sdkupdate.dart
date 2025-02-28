@@ -4,40 +4,137 @@ import 'dart:typed_data';
 import 'cs50sdkupdate_method_channel.dart';
 import 'cs50sdkupdate_platform_interface.dart';
 
+/// Result class for print jobs
+class PrintJobResult {
+  final String status;
+  final String message;
+  final List<int>? failedPages;
+  final String? documentId;
+
+  PrintJobResult({
+    required this.status,
+    required this.message,
+    this.failedPages,
+    this.documentId,
+  });
+
+  factory PrintJobResult.fromMap(Map<String, dynamic> map) {
+    return PrintJobResult(
+      status: map['status'] as String,
+      message: map['message'] as String,
+      failedPages: map['failedPages'] != null
+          ? List<int>.from(map['failedPages'])
+          : null,
+      documentId: map['documentId'] as String?,
+    );
+  }
+
+  bool get isSuccess => status == 'SUCCESS';
+  bool get isPartialSuccess => status == 'PARTIAL_SUCCESS';
+  bool get isCancelled => status == 'CANCELLED';
+  bool get isError => !isSuccess && !isPartialSuccess && !isCancelled;
+}
+
+/// Progress report for print operations
+class PrintProgress {
+  final int currentPage;
+  final int totalPages;
+  final String type; // 'processing', 'printing', or 'retry'
+
+  PrintProgress({
+    required this.currentPage,
+    required this.totalPages,
+    required this.type,
+  });
+
+  double get progressPercentage =>
+      totalPages > 0 ? (currentPage / totalPages) * 100 : 0;
+}
+
+/// Main plugin class for CS50 SDK
 class Cs50sdkupdate {
-  final _progressController = StreamController<Map<String, int>>.broadcast();
-
-  Stream<Map<String, int>> get progressStream => _progressController.stream;
-
+  // Stream controllers
+  final _progressController = StreamController<PrintProgress>.broadcast();
   final _scanController = StreamController<ScanResult>.broadcast();
 
+  // Streams
+  Stream<PrintProgress> get progressStream => _progressController.stream;
   Stream<ScanResult> get scanResultsStream => _scanController.stream;
 
-
+  // Initialize plugin and listeners
   Future<void> initialize() async {
     await MethodChannelCs50sdkupdate().initialize();
-  }
 
-  void updateProgress(int currentPage, int totalPages) {
-    _progressController.add({
-      'currentPage': currentPage,
-      'totalPages': totalPages,
+    // Subscribe to internal stream events
+    final channelInstance = Cs50sdkupdatePlatform.instance as MethodChannelCs50sdkupdate;
+
+    channelInstance.printProgressStream.listen((progressMap) {
+      final type = progressMap['method'] as String? ?? 'printing';
+      _progressController.add(PrintProgress(
+        currentPage: progressMap['currentPage'] ?? 0,
+        totalPages: progressMap['totalPages'] ?? 0,
+        type: type.replaceAll('Progress', ''),
+      ));
     });
 
-    print('Current Page: $currentPage, Total Pages: $totalPages');
+    channelInstance.scanResults.listen((scanResult) {
+      _scanController.add(scanResult);
+    });
   }
 
-  void updateScanResults(ScanResult scanResult) {
-    _scanController.add(scanResult);
-  }
-
+  /// Release resources
   void dispose() {
     _progressController.close();
+    _scanController.close();
+
+    // Also dispose channel resources
+    final channelInstance = Cs50sdkupdatePlatform.instance as MethodChannelCs50sdkupdate;
+    channelInstance.dispose();
   }
+
+  //
+  // System Methods
+  //
 
   Future<String?> getPlatformVersion() {
     return Cs50sdkupdatePlatform.instance.getPlatformVersion();
   }
+
+  Future<String?> getOSVersion() {
+    return Cs50sdkupdatePlatform.instance.getOSVersion();
+  }
+
+  Future<String?> getDeviceId() {
+    return Cs50sdkupdatePlatform.instance.getDeviceId();
+  }
+
+  Future<String?> sysApiVerson() {
+    return Cs50sdkupdatePlatform.instance.sysApiVerson();
+  }
+
+  Future<int?> sysLogSwitch(int level) {
+    return Cs50sdkupdatePlatform.instance.sysLogSwitch(level);
+  }
+
+  Future<int?> sysGetRand(List<int> rnd) {
+    return Cs50sdkupdatePlatform.instance.sysGetRand(rnd);
+  }
+
+  Future<int?> sysUpdate() {
+    return Cs50sdkupdatePlatform.instance.sysUpdate();
+  }
+
+  Future<int?> sysGetVersion(List<int> buf) {
+    return Cs50sdkupdatePlatform.instance.sysGetVersion(buf);
+  }
+
+  Future<int?> sysReadSN(List<int> SN) {
+    return Cs50sdkupdatePlatform.instance.sysReadSN(SN);
+  }
+
+  //
+  // NFC/PICC Card Methods
+  //
 
   Future<void> openPicc() async {
     await Cs50sdkupdatePlatform.instance.openPicc();
@@ -88,39 +185,10 @@ class Cs50sdkupdate {
         .piccNfc(nfcDataLen, technology, nfcUid, ndefMessage);
   }
 
-  Future<int?> sysLogSwitch(int level) async {
-    return await Cs50sdkupdatePlatform.instance.sysLogSwitch(level);
-  }
+  //
+  // Printer Basic Methods
+  //
 
-  Future<int?> sysGetRand(List<int> rnd) async {
-    return await Cs50sdkupdatePlatform.instance.sysGetRand(rnd);
-  }
-
-  Future<int?> sysUpdate() async {
-    return await Cs50sdkupdatePlatform.instance.sysUpdate();
-  }
-
-  Future<int?> sysGetVersion(List<int> buf) async {
-    return await Cs50sdkupdatePlatform.instance.sysGetVersion(buf);
-  }
-
-  Future<int?> sysReadSN(List<int> SN) async {
-    return await Cs50sdkupdatePlatform.instance.sysReadSN(SN);
-  }
-
-  Future<String?> sysApiVerson() async {
-    return await Cs50sdkupdatePlatform.instance.sysApiVerson();
-  }
-
-  Future<String?> getOSVersion() async {
-    return await Cs50sdkupdatePlatform.instance.getOSVersion();
-  }
-
-  Future<String?> getDeviceId() async {
-    return await Cs50sdkupdatePlatform.instance.getDeviceId();
-  }
-
-// Printing Methods
   Future<String?> printInit() {
     return Cs50sdkupdatePlatform.instance.printInit();
   }
@@ -165,12 +233,15 @@ class Cs50sdkupdate {
     return Cs50sdkupdatePlatform.instance.printSetLinPixelDis(linDistance);
   }
 
+  //
+  // Printer Content Methods
+  //
+
   Future<String?> printStr(String str) {
     return Cs50sdkupdatePlatform.instance.printStr(str);
   }
 
   Future<String?> printBmp(Uint8List bmpData) {
-    print('printBmpDAta: $bmpData');
     return Cs50sdkupdatePlatform.instance.printBmp(bmpData);
   }
 
@@ -191,6 +262,14 @@ class Cs50sdkupdate {
     return Cs50sdkupdatePlatform.instance.printCutQrCodeStr(contents, printTxt,
         distance, desiredWidth, desiredHeight, barcodeFormat);
   }
+
+  Future<String?> printLogo(Uint8List logo) {
+    return Cs50sdkupdatePlatform.instance.printLogo(logo);
+  }
+
+  //
+  // Printer Formatting Methods
+  //
 
   Future<String?> printStart() {
     return Cs50sdkupdatePlatform.instance.printStart();
@@ -244,71 +323,47 @@ class Cs50sdkupdate {
     return Cs50sdkupdatePlatform.instance.printSetBold(x);
   }
 
-  Future<String?> printLogo(Uint8List logo) {
-    return Cs50sdkupdatePlatform.instance.printLogo(logo);
-  }
-
   Future<String?> printLabLocate(int step) {
     return Cs50sdkupdatePlatform.instance.printLabLocate(step);
   }
 
-  Future<void> startMonitoringPrintJobs() {
-    return Cs50sdkupdatePlatform.instance.startMonitoringPrintJobs();
+  //
+  // PDF Printing Methods
+  //
+
+  /// Print a PDF file
+  Future<PrintJobResult> printPdf(String pdfPath) async {
+    final result = await Cs50sdkupdatePlatform.instance.printPdf(pdfPath);
+    return PrintJobResult.fromMap(result);
   }
 
-  Future<List<Map<String, dynamic>>> getAllPrintJobs() {
-    return Cs50sdkupdatePlatform.instance.getAllPrintJobs();
+  /// Get history of print jobs
+  Future<String?> getPrintHistory() {
+    return Cs50sdkupdatePlatform.instance.getPrintHistory();
   }
 
-  Future<void> cancelPrintJob(String jobId) {
-    return Cs50sdkupdatePlatform.instance.cancelPrintJob(jobId);
-  }
-
-  Future<void> restartPrintJob(String jobId) {
-    return Cs50sdkupdatePlatform.instance.restartPrintJob(jobId);
-  }
-
-  Future<Map<String, dynamic>> printPdf(String pdfPath) {
-    return Cs50sdkupdatePlatform.instance.printPdf(pdfPath);
-  }
-
-  Future<Map<String, dynamic>?> getPrintStats() async {
-    return await Cs50sdkupdatePlatform.instance.getPrintStats();
-  }
-
+  /// Cancel an active print job
   Future<void> cancelJob(String jobId) async {
     await Cs50sdkupdatePlatform.instance.cancelJob(jobId);
   }
 
-  Future<Map<String, dynamic>> retryPrintJob(String jobId) async {
-    return await Cs50sdkupdatePlatform.instance.retryPrintJob(jobId);
+  /// Retry printing of failed pages
+  Future<PrintJobResult> retryJob() async {
+    final result = await Cs50sdkupdatePlatform.instance.retryJob();
+    return PrintJobResult.fromMap(result);
   }
 
-  Future<Map<String, dynamic>> printLastPage() async {
-    return await Cs50sdkupdatePlatform.instance.printLastPage();
+  /// Reprint a document from history
+  Future<PrintJobResult> reprintDocument(String documentId) async {
+    final result = await Cs50sdkupdatePlatform.instance.reprintDocument(documentId);
+    return PrintJobResult.fromMap(result);
   }
 
-  Future<String?> updatePrintProgress(int currentPage, int totalPages) async {
-    try {
-      final String? result = await Cs50sdkupdatePlatform.instance
-          .updatePrintProgress(currentPage, totalPages);
-      return result;
-    } catch (e) {
-      // print('Failed to update print progress: $e');
-      return null;
-    }
-  }
+  //
+  // Scanner Methods
+  //
 
-  Stream<Map<String, dynamic>> get printProgressStream {
-    return (Cs50sdkupdatePlatform.instance as MethodChannelCs50sdkupdate)
-        .printProgressStream;
-  }
-
-  Stream<ScanResult> get scanResults {
-    return (Cs50sdkupdatePlatform.instance as MethodChannelCs50sdkupdate)
-        .scanResults;
-  }
-
+  /// Configure scanner settings
   static Future<String?> configureScannerSettings({
     int? trigMode,
     int? scanMode,
@@ -323,24 +378,28 @@ class Cs50sdkupdate {
     );
   }
 
-  static Future<String?> startScanner() {
-    return Cs50sdkupdatePlatform.instance.startScanner();
-  }
-
-  static Future<String?> stopScanner() {
-    return Cs50sdkupdatePlatform.instance.stopScanner();
-  }
-
-  static Future<String?> setScannerMode(int mode) {
-    return Cs50sdkupdatePlatform.instance.setScannerMode(mode);
-  }
-
-
+  /// Open the scanner hardware
   static Future<String?> openScanner() {
     return Cs50sdkupdatePlatform.instance.openScanner();
   }
 
+  /// Close the scanner hardware
   static Future<String?> closeScanner() {
     return Cs50sdkupdatePlatform.instance.closeScanner();
+  }
+
+  /// Start scanning operation
+  static Future<String?> startScanner() {
+    return Cs50sdkupdatePlatform.instance.startScanner();
+  }
+
+  /// Stop scanning operation
+  static Future<String?> stopScanner() {
+    return Cs50sdkupdatePlatform.instance.stopScanner();
+  }
+
+  /// Set scanner mode (continuous or normal)
+  static Future<String?> setScannerMode(int mode) {
+    return Cs50sdkupdatePlatform.instance.setScannerMode(mode);
   }
 }

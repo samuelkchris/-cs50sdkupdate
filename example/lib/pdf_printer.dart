@@ -1,267 +1,348 @@
 import 'dart:async';
 
 import 'package:cs50sdkupdate/cs50sdkupdate.dart';
-import 'package:flutter/services.dart';
-import 'package:pdf_render/pdf_render.dart' as pdf_render;
-
-enum PrintStatus { pending, printing, printed, failed, cancelled }
+import 'package:flutter/material.dart';
+import 'package:pdfx/pdfx.dart' as pdf_render;
 
 class PrintJobManager {
   final Cs50sdkupdate _printPlugin;
-  final List<Map<String, dynamic>> _pages = [];
-  final Map<String, JobStatus> _activeJobs = {};
-  Timer? _statsTimer;
-
-  int _totalPagesPrinted = 0;
-  int _totalPagesUnprinted = 0;
+  final List<PrintJob> _printJobs = [];
+  final StreamController<List<PrintJob>> _jobsController = StreamController<List<PrintJob>>.broadcast();
+  StreamSubscription<PrintProgress>? _progressSubscription;
 
   PrintJobManager(this._printPlugin) {
-    _startStatsTimer();
+    _initializePlugin();
   }
 
-  int get pagesCount => _pages.length;
+  Stream<List<PrintJob>> get jobsStream => _jobsController.stream;
+
+  int get jobsCount => _printJobs.length;
 
   Cs50sdkupdate get printPlugin => _printPlugin;
 
-  void addPage(String content) {
-    _pages.add({
-      'content': content,
-      'status': PrintStatus.pending,
-      'jobId': null,
-    });
+  Future<void> _initializePlugin() async {
+    await _printPlugin.initialize();
+    _progressSubscription = _printPlugin.progressStream.listen(_handleProgressUpdate);
   }
 
-  Future<void> printAllPages() async {
-    for (int i = 0; i < _pages.length; i++) {
-      if (_pages[i]['status'] != PrintStatus.printed) {
-        await _printPage(i);
+  void _handleProgressUpdate(PrintProgress progress) {
+    // Find the active job and update it
+    for (var job in _printJobs) {
+      if (job.isActive) {
+        job.currentPage = progress.currentPage;
+        job.totalPages = progress.totalPages;
+        job.status = _mapProgressTypeToStatus(progress.type);
+        _notifyJobsChanged();
+        break;
       }
     }
   }
 
-  Future<void> _printPage(int index) async {
-    try {
-      _pages[index]['status'] = PrintStatus.printing;
-      final jobId = await _printPlugin.printPdf(_pages[index]['content']);
-      _pages[index]['jobId'] = jobId;
-      // _activeJobs[jobId!] = _pages[index]['content'];
-      notifyListeners();
-    } catch (e) {
-      _pages[index]['status'] = PrintStatus.failed;
-      notifyListeners();
+  PrintJobStatus _mapProgressTypeToStatus(String type) {
+    switch (type) {
+      case 'processing':
+        return PrintJobStatus.processing;
+      case 'printing':
+        return PrintJobStatus.printing;
+      case 'retry':
+        return PrintJobStatus.retrying;
+      default:
+        return PrintJobStatus.processing;
     }
   }
 
-  Future<void> cancelJob(int pageIndex) async {
-    if (pageIndex >= 0 && pageIndex < _pages.length) {
-      String? jobId = _pages[pageIndex]['jobId'];
-      if (jobId != null) {
-        try {
-          await _printPlugin.cancelJob(jobId);
-          _pages[pageIndex]['status'] = PrintStatus.cancelled;
-          _activeJobs.remove(jobId);
-          notifyListeners();
-        } catch (e) {
-          print('Error cancelling job: $e');
-        }
+  Future<void> printText(String text) async {
+    try {
+      // Add a job to the list
+      final job = PrintJob(
+        id: 'txt-${DateTime.now().millisecondsSinceEpoch}',
+        name: 'Text Document',
+        content: text,
+        createdAt: DateTime.now(),
+        status: PrintJobStatus.queued,
+      );
+
+      _printJobs.add(job);
+      _notifyJobsChanged();
+
+      // Start the print job
+      job.status = PrintJobStatus.printing;
+      _notifyJobsChanged();
+
+      await _printPlugin.printInit();
+      await _printPlugin.printStr(text);
+      await _printPlugin.printStart();
+
+      job.status = PrintJobStatus.completed;
+      _notifyJobsChanged();
+    } catch (e) {
+      _addErrorJob('Text Document', e.toString());
+    }
+  }
+
+  Future<void> printPdf(String pdfPath) async {
+    try {
+      // Create document name from path
+      final pathParts = pdfPath.split('/');
+      final docName = pathParts.last;
+
+      // Add a job to the list
+      final job = PrintJob(
+        id: 'pdf-${DateTime.now().millisecondsSinceEpoch}',
+        name: docName,
+        content: pdfPath,
+        createdAt: DateTime.now(),
+        status: PrintJobStatus.queued,
+      );
+
+      _printJobs.add(job);
+      _notifyJobsChanged();
+
+      // Start the print job
+      job.status = PrintJobStatus.processing;
+      _notifyJobsChanged();
+
+      // Count pages in the PDF
+      final document = await pdf_render.PdfDocument.openFile(pdfPath);
+      job.totalPages = document.pagesCount;
+      _notifyJobsChanged();
+
+      // Print the PDF
+      final result = await _printPlugin.printPdf(pdfPath);
+
+      // Update job with result
+      job.documentId = result.documentId;
+
+      if (result.isSuccess) {
+        job.status = PrintJobStatus.completed;
+      } else if (result.isPartialSuccess) {
+        job.status = PrintJobStatus.partiallyCompleted;
+        job.failedPages = result.failedPages ?? [];
+      } else if (result.isCancelled) {
+        job.status = PrintJobStatus.cancelled;
+      } else {
+        job.status = PrintJobStatus.failed;
+        job.error = result.message;
+      }
+
+      _notifyJobsChanged();
+    } catch (e) {
+      _addErrorJob(pdfPath.split('/').last, e.toString());
+    }
+  }
+
+  Future<void> cancelJob(String jobId) async {
+    final job = _findJobById(jobId);
+    if (job != null && job.documentId != null) {
+      try {
+        await _printPlugin.cancelJob(job.documentId!);
+        job.status = PrintJobStatus.cancelled;
+        _notifyJobsChanged();
+      } catch (e) {
+        print('Error cancelling job: $e');
       }
     }
   }
 
   Future<void> retryFailedJobs() async {
-    for (int i = 0; i < _pages.length; i++) {
-      if (_pages[i]['status'] == PrintStatus.failed ||
-          _pages[i]['status'] == PrintStatus.cancelled) {
-        await _retryJob(i);
-      }
-    }
-  }
+    // Find jobs that are partially completed and have a documentId
+    final jobsToRetry = _printJobs.where((job) =>
+    job.status == PrintJobStatus.partiallyCompleted &&
+        job.documentId != null).toList();
 
-  Future<void> _retryJob(int index) async {
-    String? oldJobId = "1234";
-    if (oldJobId != null) {
+    if (jobsToRetry.isEmpty) return;
+
+    for (var job in jobsToRetry) {
       try {
-        final newJobId = await _printPlugin.retryPrintJob(oldJobId);
-        if (newJobId != null) {
-          _pages[index]['status'] = PrintStatus.printing;
-          _pages[index]['jobId'] = newJobId;
+        job.status = PrintJobStatus.retrying;
+        _notifyJobsChanged();
 
-          _activeJobs.remove(oldJobId);
-          notifyListeners();
+        final result = await _printPlugin.retryJob();
+
+        if (result.isSuccess) {
+          job.status = PrintJobStatus.completed;
+          job.failedPages = [];
+        } else if (result.isPartialSuccess) {
+          job.status = PrintJobStatus.partiallyCompleted;
+          job.failedPages = result.failedPages ?? [];
         } else {
-          throw Exception('Failed to retry job');
+          job.status = PrintJobStatus.failed;
+          job.error = result.message;
         }
-      } catch (e) {
-        print('Error retrying job for page $index: $e');
-        _pages[index]['status'] = PrintStatus.failed;
-        notifyListeners();
-      }
-    } else {
-      // If there's no job ID, try to print the page again
-      await _printPage(index);
-    }
-  }
 
-  Future<void> printPdf(String pdfPath) async {
-    final document = await pdf_render.PdfDocument.openFile(pdfPath);
-    final pageCount = document.pageCount;
-
-    for (int i = 0; i < pageCount; i++) {
-      try {
-        final jobId = await _printPlugin.printPdf(pdfPath);
-        print('Job ID: $jobId');
-        addPage('PDF Page ${i + 1}');
-        _pages.last['status'] = PrintStatus.printing;
-        _pages.last['jobId'] = jobId;
-        // _activeJobs[jobId!] = JobStatus(
-        //   pages: 1,
-        //   copies: 1,
-        //   creationTime: DateTime.now(),
-        //   isBlocked: false,
-        //   isCancelled: false,
-        //   isCompleted: false,
-        //   isFailed: false,
-        //   isQueued: true,
-        //   isStarted: false,
-        // );
-        notifyListeners();
+        _notifyJobsChanged();
       } catch (e) {
-        addPage('PDF Page ${i + 1}');
-        _pages.last['status'] = PrintStatus.failed;
-        notifyListeners();
-        print('Error printing PDF page ${i + 1}: $e');
+        job.status = PrintJobStatus.failed;
+        job.error = e.toString();
+        _notifyJobsChanged();
       }
     }
   }
 
-  void _startStatsTimer() {
-    _statsTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
-      await _updatePrintStats();
-      await PrintProgressListener().startListening();
-    });
+  void _addErrorJob(String name, String error) {
+    final job = PrintJob(
+      id: 'err-${DateTime.now().millisecondsSinceEpoch}',
+      name: name,
+      content: '',
+      createdAt: DateTime.now(),
+      status: PrintJobStatus.failed,
+      error: error,
+    );
+
+    _printJobs.add(job);
+    _notifyJobsChanged();
   }
 
-  Future<void> _updatePrintStats() async {
+  PrintJob? _findJobById(String jobId) {
     try {
-      final result = await _printPlugin.getPrintStats();
-      if (result is Map) {
-        final Map<String, dynamic> stats = Map<String, dynamic>.from(
-            result!.map((key, value) => MapEntry(key.toString(), value)));
-        _totalPagesPrinted = stats['totalPagesPrinted'] as int? ?? 0;
-        _totalPagesUnprinted = stats['totalPagesUnprinted'] as int? ?? 0;
-
-        final jobStatsRaw = stats['jobs'];
-        if (jobStatsRaw is Map) {
-          _activeJobs.clear();
-          jobStatsRaw.forEach((key, value) {
-            if (value is Map) {
-              final jobDetails = Map<String, dynamic>.from(
-                  value.map((k, v) => MapEntry(k.toString(), v)));
-              _activeJobs[key.toString()] = JobStatus(
-                  pages: jobDetails['pages'] as int,
-                  copies: jobDetails['copies'] as int,
-                  creationTime: DateTime.fromMillisecondsSinceEpoch(
-                      jobDetails['creationTime'] as int),
-                  isBlocked: jobDetails['isBlocked'] as bool? ?? false,
-                  isCancelled: jobDetails['isCancelled'] as bool? ?? false,
-                  isCompleted: jobDetails['isCompleted'] as bool? ?? false,
-                  isFailed: jobDetails['isFailed'] as bool? ?? false,
-                  isQueued: jobDetails['isQueued'] as bool? ?? false,
-                  isStarted: jobDetails['isStarted'] as bool? ?? false);
-            }
-          });
-        }
-      }
-      notifyListeners();
+      return _printJobs.firstWhere((job) => job.id == jobId);
     } catch (e) {
-      print('Error updating print stats: $e');
+      return null;
     }
   }
 
-  List<Map<String, dynamic>> get printedPages {
-    return _pages
-        .where((page) => page['status'] == PrintStatus.printed)
-        .toList();
+  void _notifyJobsChanged() {
+    _jobsController.add(List.unmodifiable(_printJobs));
   }
 
-  List<Map<String, dynamic>> get unprintedPages {
-    return _pages
-        .where((page) => page['status'] != PrintStatus.printed)
-        .toList();
+  List<PrintJob> getCompletedJobs() {
+    return _printJobs.where((job) =>
+    job.status == PrintJobStatus.completed ||
+        job.status == PrintJobStatus.partiallyCompleted).toList();
   }
 
-  Map<String, dynamic>? getPage(int index) {
-    if (index >= 0 && index < _pages.length) {
-      return Map.from(_pages[index]);
-    }
-    return null;
+  List<PrintJob> getActiveJobs() {
+    return _printJobs.where((job) =>
+    job.status == PrintJobStatus.queued ||
+        job.status == PrintJobStatus.processing ||
+        job.status == PrintJobStatus.printing ||
+        job.status == PrintJobStatus.retrying).toList();
+  }
+
+  List<PrintJob> getFailedJobs() {
+    return _printJobs.where((job) =>
+    job.status == PrintJobStatus.failed).toList();
   }
 
   void reset() {
-    _pages.clear();
-    _activeJobs.clear();
-    _totalPagesPrinted = 0;
-    _totalPagesUnprinted = 0;
-    notifyListeners();
+    _printJobs.clear();
+    _notifyJobsChanged();
   }
 
   void dispose() {
-    _statsTimer?.cancel();
+    _progressSubscription?.cancel();
+    _jobsController.close();
   }
-
-  void notifyListeners() {
-    // Notify listeners of state changes
-  }
-
-  int get totalPagesPrinted => _totalPagesPrinted;
-
-  int get totalPagesUnprinted => _totalPagesUnprinted;
 }
 
-class JobStatus {
-  final int pages;
-  final int copies;
-  final DateTime creationTime;
-  final bool isBlocked;
-  final bool isCancelled;
-  final bool isCompleted;
-  final bool isFailed;
-  final bool isQueued;
-  final bool isStarted;
+/// Status of a print job
+enum PrintJobStatus {
+  queued,
+  processing,
+  printing,
+  retrying,
+  completed,
+  partiallyCompleted,
+  failed,
+  cancelled
+}
 
-  JobStatus({
-    required this.pages,
-    required this.copies,
-    required this.creationTime,
-    required this.isBlocked,
-    required this.isCancelled,
-    required this.isCompleted,
-    required this.isFailed,
-    required this.isQueued,
-    required this.isStarted,
+/// Represents a single print job
+class PrintJob {
+  final String id;
+  final String name;
+  final String content;
+  final DateTime createdAt;
+  PrintJobStatus status;
+  String? documentId;
+  String? error;
+  int currentPage = 0;
+  int totalPages = 0;
+  List<int> failedPages = [];
+
+  PrintJob({
+    required this.id,
+    required this.name,
+    required this.content,
+    required this.createdAt,
+    required this.status,
+    this.documentId,
+    this.error,
   });
-}
 
+  /// Check if this job is currently being processed or printed
+  bool get isActive =>
+      status == PrintJobStatus.queued ||
+          status == PrintJobStatus.processing ||
+          status == PrintJobStatus.printing ||
+          status == PrintJobStatus.retrying;
 
-class PrintProgressListener {
-  static const MethodChannel _channel = MethodChannel('cs50sdkupdate');
-
-   startListening() {
-    _channel.setMethodCallHandler(_handleMethodCall);
+  /// Get the progress percentage (0.0 to 1.0)
+  double get progress {
+    if (totalPages <= 0) return 0.0;
+    return currentPage / totalPages;
   }
 
-  Future<dynamic> _handleMethodCall(MethodCall call) async {
-    switch (call.method) {
-      case 'onPrintProgress':
-        final int currentPage = call.arguments['currentPage'];
-        final int totalPages = call.arguments['totalPages'];
-        final int totalBytesWritten = call.arguments['totalBytesWritten'];
-        // Use these values to update your UI or logic
-        print('Current page: $currentPage, Total pages: $totalPages, Bytes written: $totalBytesWritten');
-        break;
-      default:
-        print('Unhandled method call: ${call.method}');
-        break;
+  /// Get a human-readable status message
+  String get statusMessage {
+    switch (status) {
+      case PrintJobStatus.queued:
+        return 'Queued';
+      case PrintJobStatus.processing:
+        return 'Processing';
+      case PrintJobStatus.printing:
+        return 'Printing';
+      case PrintJobStatus.retrying:
+        return 'Retrying';
+      case PrintJobStatus.completed:
+        return 'Completed';
+      case PrintJobStatus.partiallyCompleted:
+        return 'Partially Completed';
+      case PrintJobStatus.failed:
+        return error ?? 'Failed';
+      case PrintJobStatus.cancelled:
+        return 'Cancelled';
+    }
+  }
+
+  /// Get a color associated with the current status
+  Color get statusColor {
+    switch (status) {
+      case PrintJobStatus.queued:
+        return Colors.grey;
+      case PrintJobStatus.processing:
+      case PrintJobStatus.printing:
+      case PrintJobStatus.retrying:
+        return Colors.blue;
+      case PrintJobStatus.completed:
+        return Colors.green;
+      case PrintJobStatus.partiallyCompleted:
+        return Colors.orange;
+      case PrintJobStatus.failed:
+      case PrintJobStatus.cancelled:
+        return Colors.red;
+    }
+  }
+
+  /// Get an icon associated with the current status
+  IconData get statusIcon {
+    switch (status) {
+      case PrintJobStatus.queued:
+        return Icons.hourglass_empty;
+      case PrintJobStatus.processing:
+        return Icons.settings;
+      case PrintJobStatus.printing:
+        return Icons.print;
+      case PrintJobStatus.retrying:
+        return Icons.refresh;
+      case PrintJobStatus.completed:
+        return Icons.check_circle;
+      case PrintJobStatus.partiallyCompleted:
+        return Icons.warning;
+      case PrintJobStatus.failed:
+        return Icons.error;
+      case PrintJobStatus.cancelled:
+        return Icons.cancel;
     }
   }
 }

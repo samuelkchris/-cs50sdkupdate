@@ -18,6 +18,35 @@ class _NFCScannerState extends State<NFCScanner> {
   bool isScanning = false;
   final cs50sdkupdatePlugin = Cs50sdkupdate();
   Timer? inactivityTimer;
+  bool _isInitializing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeNfc();
+  }
+
+  Future<void> _initializeNfc() async {
+    setState(() {
+      _isInitializing = true;
+    });
+
+    try {
+      await cs50sdkupdatePlugin.initialize();
+      await cs50sdkupdatePlugin.openPicc();
+      setState(() {
+        _isInitializing = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isInitializing = false;
+        pollingData = 'Failed to initialize NFC: $e';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to initialize NFC: $e')),
+      );
+    }
+  }
 
   Future<void> startNFCScanning() async {
     if (isScanning) return;
@@ -94,8 +123,10 @@ class _NFCScannerState extends State<NFCScanner> {
     });
 
     inactivityTimer?.cancel();
-    // Release resources here
-    // cs50sdkupdatePlugin.releaseResources(); // Uncomment and implement if needed
+    // Close PICC gracefully
+    cs50sdkupdatePlugin.piccClose().catchError((e) {
+      print('Error closing PICC: $e');
+    });
 
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
@@ -116,18 +147,49 @@ class _NFCScannerState extends State<NFCScanner> {
     }
 
     String uid = parsedData['UID'] ?? '';
-    uid = uid.replaceAll(' ', '').substring(0, 8);
 
-    int decimalUid = NfcUidConverter.hexToDecimal(uid);
+    // Handle different UID formats
+    if (uid.isNotEmpty) {
+      uid = uid.replaceAll(' ', '');
+      // Make sure we have at least 8 characters for hex conversion
+      if (uid.length >= 8) {
+        uid = uid.substring(0, 8);
+        // Try to convert to decimal
+        try {
+          int decimalUid = NfcUidConverter.hexToDecimal(uid);
 
-    setState(() {
-      pollingData = '''
+          setState(() {
+            pollingData = '''
 Card Type: ${parsedData['Card Type'] ?? 'N/A'}
 UID (Hex): $uid
 UID (Decimal): $decimalUid
 SAK: ${parsedData['SAK'] ?? 'N/A'}
 ''';
-    });
+          });
+        } catch (e) {
+          setState(() {
+            pollingData = '''
+Card Type: ${parsedData['Card Type'] ?? 'N/A'}
+UID (Hex): $uid
+SAK: ${parsedData['SAK'] ?? 'N/A'}
+Error: Could not convert UID to decimal
+''';
+          });
+        }
+      } else {
+        setState(() {
+          pollingData = '''
+Card Type: ${parsedData['Card Type'] ?? 'N/A'}
+UID: $uid
+SAK: ${parsedData['SAK'] ?? 'N/A'}
+''';
+        });
+      }
+    } else {
+      setState(() {
+        pollingData = 'Could not parse NFC data: $data';
+      });
+    }
 
     print('NFC data received: $pollingData');
   }
@@ -140,6 +202,14 @@ SAK: ${parsedData['SAK'] ?? 'N/A'}
   @override
   void dispose() {
     inactivityTimer?.cancel();
+
+    // Ensure PICC is closed when navigating away
+    if (isScanning) {
+      cs50sdkupdatePlugin.piccClose().catchError((e) {
+        print('Error closing PICC on dispose: $e');
+      });
+    }
+
     super.dispose();
   }
 
@@ -148,13 +218,42 @@ SAK: ${parsedData['SAK'] ?? 'N/A'}
     return Scaffold(
       appBar: AppBar(title: const Text('NFC Scanner')),
       body: Center(
-        child: Column(
+        child: _isInitializing
+            ? const CircularProgressIndicator()
+            : Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             ElevatedButton(
               onPressed: isScanning ? stopScanning : startNFCScanning,
               child: Text(isScanning ? 'Stop Scanning' : 'Start NFC Scan'),
             ),
+            const SizedBox(height: 20),
+            if (pollingData.isNotEmpty && !isScanning)
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Card(
+                  elevation: 4,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      children: [
+                        const Text(
+                          'Last Scan Result:',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          pollingData,
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -176,10 +275,17 @@ class NFCDataScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('NFC Data')),
       body: Center(
-        child: Text(
-          data,
-          style: const TextStyle(fontSize: 18),
-          textAlign: TextAlign.center,
+        child: Card(
+          margin: const EdgeInsets.all(16),
+          elevation: 4,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              data,
+              style: const TextStyle(fontSize: 18),
+              textAlign: TextAlign.center,
+            ),
+          ),
         ),
       ),
     );
