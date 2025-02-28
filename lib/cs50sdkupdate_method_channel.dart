@@ -32,20 +32,31 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
   final StreamController<ScanResult> _scanController =
   StreamController<ScanResult>.broadcast();
 
+  /// Constructor with method channel initialization
+  MethodChannelCs50sdkupdate() {
+    methodChannel.setMethodCallHandler(_handleMethodCall);
+    debugPrint("MethodChannelCs50sdkupdate: Method channel handler set up");
+  }
+
   /// Initialize the method channel handler
   @override
   Future<void> initialize() async {
-    methodChannel.setMethodCallHandler(_handleMethodCall);
+    debugPrint("MethodChannelCs50sdkupdate: initialize() called");
+    // No need to set the handler again, just return a completed future
+    return Future.value();
   }
 
   /// Handle method calls from the native side
-  Future<void> _handleMethodCall(MethodCall call) async {
+  Future<dynamic> _handleMethodCall(MethodCall call) async {
+    debugPrint("MethodChannelCs50sdkupdate: Received method call: ${call.method} with args: ${call.arguments}");
+
     try {
       switch (call.method) {
         case 'processingProgress':
         case 'printingProgress':
         case 'retryProgress':
           final progressMap = Map<String, dynamic>.from(call.arguments);
+          debugPrint("MethodChannelCs50sdkupdate: Adding to progress controller: $progressMap");
           _progressController.add(progressMap);
           break;
 
@@ -59,11 +70,12 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
           break;
 
         default:
-          throw MissingPluginException('Unhandled method: ${call.method}');
+          debugPrint("MethodChannelCs50sdkupdate: Unhandled method call: ${call.method}");
       }
     } catch (e) {
-      debugPrint('Error handling method call ${call.method}: $e');
+      debugPrint('MethodChannelCs50sdkupdate: Error handling method call ${call.method}: $e');
     }
+    return null;
   }
 
   // Access to stream controllers

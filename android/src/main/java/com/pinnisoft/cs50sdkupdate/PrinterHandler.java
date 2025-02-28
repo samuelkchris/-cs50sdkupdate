@@ -1201,8 +1201,7 @@ public class PrinterHandler {
             progressMap.put("method", "printingProgress");
 
             Log.d(TAG, "Sending printing progress update: " + currentPage + "/" + totalPages);
-            new Handler(Looper.getMainLooper()).post(() -> channel.invokeMethod("printingProgress", progressMap));
-//            mainHandler.post(() -> channel.invokeMethod("printingProgress", progressMap));
+            mainHandler.post(() -> channel.invokeMethod("printingProgress", progressMap));
         }
     }
 

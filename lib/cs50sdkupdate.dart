@@ -65,41 +65,34 @@ class Cs50sdkupdate {
 
   // Initialize plugin and listeners
   Future<void> initialize() async {
-    await MethodChannelCs50sdkupdate().initialize();
+    debugPrint("Cs50sdkupdate: initialize() called");
+
+    // Get instance of the channel implementation
+    final channelInstance = Cs50sdkupdatePlatform.instance as MethodChannelCs50sdkupdate;
+
+    // Subscribe to internal stream events
+    channelInstance.printProgressStream.listen((progressMap) {
+      debugPrint("Cs50sdkupdate: Received progress update from channel: $progressMap");
+      final method = progressMap['method'] as String? ?? 'printing';
+      final type = method.replaceAll('Progress', '');
+
+      _progressController.add(PrintProgress(
+        currentPage: progressMap['currentPage'] ?? 0,
+        totalPages: progressMap['totalPages'] ?? 0,
+        type: type,
+      ));
+    }, onError: (error) {
+      debugPrint("Cs50sdkupdate: Error in progress stream: $error");
+    });
+
+    channelInstance.scanResults.listen((scanResult) {
+      _scanController.add(scanResult);
+    });
+
+    // Ensure the method channel is initialized
+    await channelInstance.initialize();
+    debugPrint("Cs50sdkupdate: Initialization complete");
   }
-
-  void updateProgress(int currentPage, int totalPages) {
-    _progressController.add(
-      PrintProgress(
-        currentPage: currentPage,
-        totalPages: totalPages,
-        type: 'processing',
-      ),
-    );
-
-    debugPrint('Current Page: $currentPage, Total Pages: $totalPages');
-  }
-
-  // Future<void> initialize() async {
-  //   await MethodChannelCs50sdkupdate().initialize();
-  //
-  //   // Subscribe to internal stream events
-  //   final channelInstance = Cs50sdkupdatePlatform.instance as MethodChannelCs50sdkupdate;
-  //
-  //   channelInstance.printProgressStream.listen((progressMap) {
-  //     debugPrint("RECEIVED PROGRESS DATA: $progressMap");
-  //     final type = progressMap['method'] as String? ?? 'printing';
-  //     _progressController.add(PrintProgress(
-  //       currentPage: progressMap['currentPage'] ?? 0,
-  //       totalPages: progressMap['totalPages'] ?? 0,
-  //       type: type.replaceAll('Progress', ''),
-  //     ));
-  //   });
-  //
-  //   channelInstance.scanResults.listen((scanResult) {
-  //     _scanController.add(scanResult);
-  //   });
-  // }
 
   /// Release resources
   void dispose() {
@@ -109,31 +102,6 @@ class Cs50sdkupdate {
     // Also dispose channel resources
     final channelInstance = Cs50sdkupdatePlatform.instance as MethodChannelCs50sdkupdate;
     channelInstance.dispose();
-  }
-
-  //
-  // Streams
-  //
-
-  Future<String?> updatePrintProgress(int currentPage, int totalPages) async {
-    try {
-      final String? result = await Cs50sdkupdatePlatform.instance
-          .updatePrintProgress(currentPage, totalPages);
-      return result;
-    } catch (e) {
-      // print('Failed to update print progress: $e');
-      return null;
-    }
-  }
-
-  Stream<Map<String, dynamic>> get printProgressStream {
-    return (Cs50sdkupdatePlatform.instance as MethodChannelCs50sdkupdate)
-        .printProgressStream;
-  }
-
-  Stream<ScanResult> get scanResults {
-    return (Cs50sdkupdatePlatform.instance as MethodChannelCs50sdkupdate)
-        .scanResults;
   }
 
   //

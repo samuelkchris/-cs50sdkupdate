@@ -19,65 +19,111 @@ class PrintProgressWidget extends StatefulWidget {
 
 class _PrintProgressWidgetState extends State<PrintProgressWidget> {
   final Cs50sdkupdate _cs50sdkupdate = Cs50sdkupdate();
-  late StreamSubscription<PrintProgress> _progressSubscription;
+  StreamSubscription<PrintProgress>? _progressSubscription;
 
   int _currentPage = 0;
   int _totalPages = 0;
   bool _isPrinting = false;
-  String _statusMessage = 'Ready to print';
+  bool _isInitialized = false;
+  String _statusMessage = 'Initializing...';
   String _printJobType = 'processing';
   bool _canCancel = false;
   String? _documentId;
+  List<String> _logs = [];
 
-  @override
-  void initState() {
-    super.initState();
-    _initializeSdk();
-  }
-
-  Future<void> _initializeSdk() async {
-    await _cs50sdkupdate.initialize();
-
-    _progressSubscription = _cs50sdkupdate.progressStream.listen((progress) {
-      setState(() {
-        _currentPage = progress.currentPage;
-        _totalPages = progress.totalPages;
-        _printJobType = progress.type;
-
-        if (_printJobType == 'processing') {
-          _statusMessage = 'Processing page $_currentPage of $_totalPages';
-        } else if (_printJobType == 'printing') {
-          _statusMessage = 'Printing page $_currentPage of $_totalPages';
-          _canCancel = true;
-        } else if (_printJobType == 'retry') {
-          _statusMessage = 'Retrying page $_currentPage of $_totalPages';
-        }
-      });
+  void _log(String message) {
+    debugPrint("PRINT_PROGRESS: $message");
+    setState(() {
+      _logs.add("[${DateTime.now().toString().split('.').first}] $message");
+      // Keep the log from growing too large
+      if (_logs.length > 100) _logs.removeAt(0);
     });
   }
 
   @override
+  void initState() {
+    super.initState();
+    _log("InitState called");
+    _initializeSdk();
+  }
+
+  Future<void> _initializeSdk() async {
+    _log("Initializing SDK");
+    try {
+      await _cs50sdkupdate.initialize();
+      _log("SDK initialized successfully");
+
+      _progressSubscription = _cs50sdkupdate.progressStream.listen(
+            (progress) {
+          _log("Progress received: ${progress.currentPage}/${progress.totalPages} (${progress.type})");
+          setState(() {
+            _currentPage = progress.currentPage;
+            _totalPages = progress.totalPages;
+            _printJobType = progress.type;
+
+            if (_printJobType == 'processing') {
+              _statusMessage = 'Processing page $_currentPage of $_totalPages';
+            } else if (_printJobType == 'printing') {
+              _statusMessage = 'Printing page $_currentPage of $_totalPages';
+              _canCancel = true;
+            } else if (_printJobType == 'retry') {
+              _statusMessage = 'Retrying page $_currentPage of $_totalPages';
+            }
+          });
+        },
+        onError: (error) {
+          _log("Progress stream error: $error");
+        },
+        onDone: () {
+          _log("Progress stream closed");
+        },
+      );
+
+      setState(() {
+        _isInitialized = true;
+        _statusMessage = 'Ready to print';
+      });
+
+      _log("Progress subscription set up");
+      // Auto-start printing after initialization
+      _startPrinting();
+    } catch (e) {
+      _log("Error initializing SDK: $e");
+      setState(() {
+        _statusMessage = 'Error initializing: $e';
+      });
+    }
+  }
+
+  @override
   void dispose() {
-    _progressSubscription.cancel();
+    _log("Disposing widget");
+    _progressSubscription?.cancel();
     super.dispose();
   }
 
   Future<void> _startPrinting() async {
+    _log("Starting print job with path: ${widget.pdfPath}");
     setState(() {
       _isPrinting = true;
       _statusMessage = 'Starting print job...';
     });
 
     try {
+      _log("Calling printPdf method");
       final result = await _cs50sdkupdate.printPdf(widget.pdfPath);
+      _log("Print job completed with status: ${result.status}");
+
       setState(() {
         _statusMessage = result.message;
         _documentId = result.documentId;
+        _log("Document ID: $_documentId");
 
         if (result.isSuccess) {
           _statusMessage = 'Print job completed successfully';
         } else if (result.isPartialSuccess) {
-          _statusMessage = 'Partially completed. Some pages failed.';
+          _statusMessage = 'Partially completed. Some pages failed: ${result.failedPages}';
+          _log("Failed pages: ${result.failedPages}");
         } else if (result.isCancelled) {
           _statusMessage = 'Print job was cancelled';
         } else {
@@ -87,6 +133,7 @@ class _PrintProgressWidgetState extends State<PrintProgressWidget> {
 
       widget.onPrintComplete(_statusMessage);
     } catch (e) {
+      _log("Exception during printing: $e");
       setState(() {
         _statusMessage = 'Failed to start print job: $e';
       });
@@ -100,6 +147,7 @@ class _PrintProgressWidgetState extends State<PrintProgressWidget> {
 
   Future<void> _cancelPrinting() async {
     if (_documentId != null) {
+      _log("Cancelling print job with ID: $_documentId");
       try {
         await _cs50sdkupdate.cancelJob(_documentId!);
         setState(() {
@@ -107,14 +155,18 @@ class _PrintProgressWidgetState extends State<PrintProgressWidget> {
           _isPrinting = false;
         });
       } catch (e) {
+        _log("Error cancelling job: $e");
         setState(() {
           _statusMessage = 'Failed to cancel: $e';
         });
       }
+    } else {
+      _log("Cannot cancel - documentId is null");
     }
   }
 
   Future<void> _retryFailedPages() async {
+    _log("Retrying failed pages");
     setState(() {
       _statusMessage = 'Retrying failed pages...';
       _isPrinting = true;
@@ -122,17 +174,21 @@ class _PrintProgressWidgetState extends State<PrintProgressWidget> {
 
     try {
       final result = await _cs50sdkupdate.retryJob();
+      _log("Retry completed with status: ${result.status}");
+
       setState(() {
         _statusMessage = result.message;
         if (result.isSuccess) {
           _statusMessage = 'Retry completed successfully';
         } else if (result.isPartialSuccess) {
-          _statusMessage = 'Partially completed. Some pages still failed.';
+          _statusMessage = 'Partially completed. Some pages still failed: ${result.failedPages}';
+          _log("Still failed pages: ${result.failedPages}");
         } else {
           _statusMessage = 'Error during retry: ${result.message}';
         }
       });
     } catch (e) {
+      _log("Exception during retry: $e");
       setState(() {
         _statusMessage = 'Failed to retry: $e';
       });
@@ -172,7 +228,7 @@ class _PrintProgressWidgetState extends State<PrintProgressWidget> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              if (!_isPrinting)
+              if (!_isPrinting && _logs.isEmpty)
                 ElevatedButton(
                   onPressed: _startPrinting,
                   child: const Text('Start Printing'),
@@ -192,6 +248,33 @@ class _PrintProgressWidgetState extends State<PrintProgressWidget> {
                 ),
             ],
           ),
+          const SizedBox(height: 20),
+          // Display logs in a scrollable area (for debugging)
+          if (_logs.isNotEmpty) ...[
+            Text("Debug Logs:", style: Theme.of(context).textTheme.titleSmall),
+            Container(
+              height: 200,
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: ListView.builder(
+                itemCount: _logs.length,
+                itemBuilder: (context, index) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    child: Text(
+                      _logs[index],
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
         ],
       ),
     );
