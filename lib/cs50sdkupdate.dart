@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
+
 import 'cs50sdkupdate_method_channel.dart';
 import 'cs50sdkupdate_platform_interface.dart';
 
@@ -69,6 +71,7 @@ class Cs50sdkupdate {
     final channelInstance = Cs50sdkupdatePlatform.instance as MethodChannelCs50sdkupdate;
 
     channelInstance.printProgressStream.listen((progressMap) {
+      debugPrint("RECEIVED PROGRESS DATA: $progressMap");
       final type = progressMap['method'] as String? ?? 'printing';
       _progressController.add(PrintProgress(
         currentPage: progressMap['currentPage'] ?? 0,
