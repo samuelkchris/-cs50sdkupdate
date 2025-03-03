@@ -44,6 +44,7 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
     private ScannerHandler scannerHandler;
     private NfcHandler nfcHandler;
     private SystemHandler systemHandler;
+    private PaymentHandler paymentHandler;
 
     // Method router
     private final Map<String, MethodHandler> methodHandlers = new HashMap<>();
@@ -67,6 +68,9 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
         printerHandler = new PrinterHandler(posApiHelper, context, activity, channel, executorService);
         scannerHandler = new ScannerHandler(context, channel);
         nfcHandler = new NfcHandler(posApiHelper, channel);
+
+        // Initialize payment handler
+        paymentHandler = new PaymentHandler(posApiHelper, context, channel);
 
         // Register method handlers
         registerMethodHandlers();
@@ -97,6 +101,14 @@ public class Cs50sdkupdatePlugin implements FlutterPlugin, MethodChannel.MethodC
 
         // NFC/PICC methods
         registerNfcMethods();
+
+        // Payment methods
+        registerPaymentMethods();
+
+    }
+
+    private void registerPaymentMethods() {
+        paymentHandler.registerMethodHandlers(methodHandlers);
     }
 
     private void registerSystemMethods() {

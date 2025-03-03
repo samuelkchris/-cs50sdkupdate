@@ -147,6 +147,14 @@ public class ByteUtil {
         return sbBuffer.toString();
     }
 
+    public static String bytesToHexString(byte[] b) {
+        StringBuffer sbBuffer = new StringBuffer();
+        for (int i = 0; i < b.length; i++) {
+            sbBuffer.append(byteToHexString(b[i]));
+        }
+        return sbBuffer.toString();
+    }
+
     public static void IntToBytes(byte[] b, int x, int offset) {
         //byte[] b = new byte[4];
 

@@ -825,6 +825,471 @@ class MethodChannelCs50sdkupdate extends Cs50sdkupdatePlatform {
     }
   }
 
+  // Add these to cs50sdkupdate_method_channel.dart
+
+// IC Card / SAM Card methods
+  @override
+  Future<String?> iccOpen(int slot, int vccMode, List<int> atr) async {
+    try {
+      return await methodChannel.invokeMethod<String>('IccOpen', {
+        'slot': slot,
+        'vccMode': vccMode,
+        'atr': atr,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Error opening IC card: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> iccClose(int slot) async {
+    try {
+      return await methodChannel.invokeMethod<String>('IccClose', {
+        'slot': slot,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Error closing IC card: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> iccCommand(int slot, List<int> apduSend, List<int> apduResp) async {
+    try {
+      return await methodChannel.invokeMethod<String>('IccCommand', {
+        'slot': slot,
+        'apduSend': apduSend,
+        'apduResp': apduResp,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Error sending ICC command: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> iccCheck(int slot) async {
+    try {
+      return await methodChannel.invokeMethod<String>('IccCheck', {
+        'slot': slot,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Error checking IC card: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> scApduCmd(int slot, List<int> pbInApdu, int usInApduLen, List<int> pbOut, List<int> pbOutLen) async {
+    try {
+      return await methodChannel.invokeMethod<String>('SC_ApduCmd', {
+        'slot': slot,
+        'pbInApdu': pbInApdu,
+        'usInApduLen': usInApduLen,
+        'pbOut': pbOut,
+        'pbOutLen': pbOutLen,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Error sending SC APDU command: $e');
+      return null;
+    }
+  }
+
+// Magnetic Card methods
+  @override
+  Future<String?> mcrOpen() async {
+    try {
+      return await methodChannel.invokeMethod<String>('McrOpen');
+    } on PlatformException catch (e) {
+      debugPrint('Error opening magnetic card reader: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> mcrClose() async {
+    try {
+      return await methodChannel.invokeMethod<String>('McrClose');
+    } on PlatformException catch (e) {
+      debugPrint('Error closing magnetic card reader: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> mcrReset() async {
+    try {
+      return await methodChannel.invokeMethod<String>('McrReset');
+    } on PlatformException catch (e) {
+      debugPrint('Error resetting magnetic card reader: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> mcrCheck() async {
+    try {
+      return await methodChannel.invokeMethod<String>('McrCheck');
+    } on PlatformException catch (e) {
+      debugPrint('Error checking magnetic card: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> mcrRead(int keyNo, int mode, List<int> trackBuffers) async {
+    try {
+      final result = await methodChannel.invokeMethod<Map<dynamic, dynamic>>('McrRead', {
+        'keyNo': keyNo,
+        'mode': mode,
+        'track1': trackBuffers.sublist(0, 256),
+        'track2': trackBuffers.sublist(256, 512),
+        'track3': trackBuffers.sublist(512, 768),
+      });
+      return _convertToStringDynamicMap(result);
+    } on PlatformException catch (e) {
+      debugPrint('Error reading magnetic card: $e');
+      return {
+        'error': e.message ?? 'Unknown error occurred while reading magnetic card'
+      };
+    }
+  }
+
+// Payment general APIs
+  @override
+  Future<String?> initPaySysKernel() async {
+    try {
+      return await methodChannel.invokeMethod<String>('InitPaySysKernel');
+    } on PlatformException catch (e) {
+      debugPrint('Error initializing payment system kernel: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> emvSetKeyPadPrompt(String prompt) async {
+    try {
+      return await methodChannel.invokeMethod<String>('EmvSetKeyPadPrompt', {
+        'prompt': prompt,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Error setting keypad prompt: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> emvSetCurrencyCode(String code) async {
+    try {
+      return await methodChannel.invokeMethod<String>('EmvSetCurrencyCode', {
+        'code': code,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Error setting currency code: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> emvSetInputPinCallback(int timeout) async {
+    try {
+      return await methodChannel.invokeMethod<String>('EmvSetInputPinCallback', {
+        'timeout': timeout,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Error setting input PIN callback: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> emvKernelPinInput(int timeout, int keyId) async {
+    try {
+      return await methodChannel.invokeMethod<String>('EmvKernelPinInput', {
+        'timeout': timeout,
+        'keyId': keyId,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Error starting kernel PIN input: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> initOnLinePINContext() async {
+    try {
+      return await methodChannel.invokeMethod<String>('InitOnLinePINContext');
+    } on PlatformException catch (e) {
+      debugPrint('Error initializing online PIN context: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> callContactEmvPinblock(int pinType) async {
+    try {
+      return await methodChannel.invokeMethod<String>('CallContactEmvPinblock', {
+        'pinType': pinType,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Error calling contact EMV PINBLOCK: $e');
+      return null;
+    }
+  }
+
+// EMVCO methods
+  @override
+  Future<String?> emvGetPinBlock(int type, int pinkeyN, List<int> cardNo, List<int> mode, List<int> pinBlock, int timeout) async {
+    try {
+      return await methodChannel.invokeMethod<String>('EmvGetPinBlock', {
+        'type': type,
+        'pinkeyN': pinkeyN,
+        'cardNo': cardNo,
+        'mode': mode,
+        'pinBlock': pinBlock,
+        'timeout': timeout,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Error getting EMV PIN block: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> emvGetDukptPinblock(int type, int pinkeyN, List<int> cardNo, List<int> pinBlock, List<int> outKsn, List<int> pinKcv, int timeout) async {
+    try {
+      return await methodChannel.invokeMethod<String>('EmvGetDukptPinblock', {
+        'type': type,
+        'pinkeyN': pinkeyN,
+        'cardNo': cardNo,
+        'pinBlock': pinBlock,
+        'outKsn': outKsn,
+        'pinKcv': pinKcv,
+        'timeout': timeout,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Error getting EMV DUKPT PIN block: $e');
+      return null;
+    }
+  }
+
+// PCI methods
+  @override
+  Future<String?> pciWritePinMKey(int keyNo, int keyLen, List<int> keyData, int mode) async {
+    try {
+      return await methodChannel.invokeMethod<String>('PciWritePinMKey', {
+        'keyNo': keyNo,
+        'keyLen': keyLen,
+        'keyData': keyData,
+        'mode': mode,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Error writing PIN main key: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> pciWriteMacMKey(int keyNo, int keyLen, List<int> keyData, int mode) async {
+    try {
+      return await methodChannel.invokeMethod<String>('PciWriteMacMKey', {
+        'keyNo': keyNo,
+        'keyLen': keyLen,
+        'keyData': keyData,
+        'mode': mode,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Error writing MAC main key: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> pciWriteDesMKey(int keyNo, int keyLen, List<int> keyData, int mode) async {
+    try {
+      return await methodChannel.invokeMethod<String>('PciWriteDesMKey', {
+        'keyNo': keyNo,
+        'keyLen': keyLen,
+        'keyData': keyData,
+        'mode': mode,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Error writing DES main key: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> pciWritePinKey(int keyNo, int keyLen, List<int> keyData, int mode, int mkeyNo) async {
+    try {
+      return await methodChannel.invokeMethod<String>('PciWritePinKey', {
+        'keyNo': keyNo,
+        'keyLen': keyLen,
+        'keyData': keyData,
+        'mode': mode,
+        'mkeyNo': mkeyNo,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Error writing PIN key: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> pciWriteMacKey(int keyNo, int keyLen, List<int> keyData, int mode, int mkeyNo) async {
+    try {
+      return await methodChannel.invokeMethod<String>('PciWriteMacKey', {
+        'keyNo': keyNo,
+        'keyLen': keyLen,
+        'keyData': keyData,
+        'mode': mode,
+        'mkeyNo': mkeyNo,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Error writing MAC key: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> pciWriteDesKey(int keyNo, int keyLen, List<int> keyData, int mode, int mkeyNo) async {
+    try {
+      return await methodChannel.invokeMethod<String>('PciWriteDesKey', {
+        'keyNo': keyNo,
+        'keyLen': keyLen,
+        'keyData': keyData,
+        'mode': mode,
+        'mkeyNo': mkeyNo,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Error writing DES key: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> pciReadKCV(int mKeyNo, int keyType, List<int> mKeyKcv) async {
+    try {
+      return await methodChannel.invokeMethod<String>('PciReadKCV', {
+        'mKeyNo': mKeyNo,
+        'keyType': keyType,
+        'mKeyKcv': mKeyKcv,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Error reading KCV: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> pciGetPin(int keyNo, int minLen, int maxLen, int mode, List<int> cardNo, List<int> pinBlock, List<int> pinPasswd, int pinLen, int mark, List<int> iAmount, int waitTimeSec) async {
+    try {
+      return await methodChannel.invokeMethod<String>('PciGetPin', {
+        'keyNo': keyNo,
+        'minLen': minLen,
+        'maxLen': maxLen,
+        'mode': mode,
+        'cardNo': cardNo,
+        'pinBlock': pinBlock,
+        'pinPasswd': pinPasswd,
+        'pinLen': pinLen,
+        'mark': mark,
+        'iAmount': iAmount,
+        'waitTimeSec': waitTimeSec,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Error getting PIN: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> pciGetMac(int keyNo, int inLen, List<int> inData, List<int> macOut, int mode) async {
+    try {
+      return await methodChannel.invokeMethod<String>('PciGetMac', {
+        'keyNo': keyNo,
+        'inLen': inLen,
+        'inData': inData,
+        'macOut': macOut,
+        'mode': mode,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Error getting MAC: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> pciGetDes(int keyNo, int inLen, List<int> inData, List<int> desOut, int mode) async {
+    try {
+      return await methodChannel.invokeMethod<String>('PciGetDes', {
+        'keyNo': keyNo,
+        'inLen': inLen,
+        'inData': inData,
+        'desOut': desOut,
+        'mode': mode,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Error performing DES operation: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> pciWriteDukptIpek(int keyId, int ipekLen, List<int> ipek, int ksnLen, List<int> ksn) async {
+    try {
+      return await methodChannel.invokeMethod<String>('PciWriteDukptIpek', {
+        'keyId': keyId,
+        'ipekLen': ipekLen,
+        'ipek': ipek,
+        'ksnLen': ksnLen,
+        'ksn': ksn,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Error writing DUKPT IPEK: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> pciGetDukptMac(int keyId, int mode, int macDataLen, List<int> macDataIn, List<int> macOut, List<int> outKsn, List<int> macKcv) async {
+    try {
+      return await methodChannel.invokeMethod<String>('PciGetDukptMac', {
+        'keyId': keyId,
+        'mode': mode,
+        'macDataLen': macDataLen,
+        'macDataIn': macDataIn,
+        'macOut': macOut,
+        'outKsn': outKsn,
+        'macKcv': macKcv,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Error getting DUKPT MAC: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> pciGetDukptDes(int keyId, int mode, int desMode, int desDataLen, List<int> desDataIn, List<int> iv, List<int> desOut, List<int> outKsn, List<int> desKcv) async {
+    try {
+      return await methodChannel.invokeMethod<String>('PciGetDukptDes', {
+        'keyId': keyId,
+        'mode': mode,
+        'desMode': desMode,
+        'desDataLen': desDataLen,
+        'desDataIn': desDataIn,
+        'iv': iv,
+        'desOut': desOut,
+        'outKsn': outKsn,
+        'desKcv': desKcv,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('Error performing DUKPT DES operation: $e');
+      return null;
+    }
+  }
+
   // Helper methods
 
   Map<String, dynamic> _convertToStringDynamicMap(Map<dynamic, dynamic>? input) {

@@ -32,8 +32,11 @@ class PrintJobResult {
   }
 
   bool get isSuccess => status == 'SUCCESS';
+
   bool get isPartialSuccess => status == 'PARTIAL_SUCCESS';
+
   bool get isCancelled => status == 'CANCELLED';
+
   bool get isError => !isSuccess && !isPartialSuccess && !isCancelled;
 }
 
@@ -61,6 +64,7 @@ class Cs50sdkupdate {
 
   // Streams
   Stream<PrintProgress> get progressStream => _progressController.stream;
+
   Stream<ScanResult> get scanResultsStream => _scanController.stream;
 
   // Initialize plugin and listeners
@@ -68,11 +72,13 @@ class Cs50sdkupdate {
     debugPrint("Cs50sdkupdate: initialize() called");
 
     // Get instance of the channel implementation
-    final channelInstance = Cs50sdkupdatePlatform.instance as MethodChannelCs50sdkupdate;
+    final channelInstance =
+        Cs50sdkupdatePlatform.instance as MethodChannelCs50sdkupdate;
 
     // Subscribe to internal stream events
     channelInstance.printProgressStream.listen((progressMap) {
-      debugPrint("Cs50sdkupdate: Received progress update from channel: $progressMap");
+      debugPrint(
+          "Cs50sdkupdate: Received progress update from channel: $progressMap");
       final method = progressMap['method'] as String? ?? 'printing';
       final type = method.replaceAll('Progress', '');
 
@@ -100,7 +106,8 @@ class Cs50sdkupdate {
     _scanController.close();
 
     // Also dispose channel resources
-    final channelInstance = Cs50sdkupdatePlatform.instance as MethodChannelCs50sdkupdate;
+    final channelInstance =
+        Cs50sdkupdatePlatform.instance as MethodChannelCs50sdkupdate;
     channelInstance.dispose();
   }
 
@@ -367,7 +374,8 @@ class Cs50sdkupdate {
 
   /// Reprint a document from history
   Future<PrintJobResult> reprintDocument(String documentId) async {
-    final result = await Cs50sdkupdatePlatform.instance.reprintDocument(documentId);
+    final result =
+        await Cs50sdkupdatePlatform.instance.reprintDocument(documentId);
     return PrintJobResult.fromMap(result);
   }
 
@@ -414,4 +422,211 @@ class Cs50sdkupdate {
   static Future<String?> setScannerMode(int mode) {
     return Cs50sdkupdatePlatform.instance.setScannerMode(mode);
   }
+
+  // Add these to cs50sdkupdate.dart - place them after the existing method groups
+
+//
+// IC Card / SAM Card Methods
+//
+
+  Future<String?> iccOpen(int slot, int vccMode, List<int> atr) {
+    return Cs50sdkupdatePlatform.instance.iccOpen(slot, vccMode, atr);
+  }
+
+  Future<String?> iccClose(int slot) {
+    return Cs50sdkupdatePlatform.instance.iccClose(slot);
+  }
+
+  Future<String?> iccCommand(int slot, List<int> apduSend, List<int> apduResp) {
+    return Cs50sdkupdatePlatform.instance.iccCommand(slot, apduSend, apduResp);
+  }
+
+  Future<String?> iccCheck(int slot) {
+    return Cs50sdkupdatePlatform.instance.iccCheck(slot);
+  }
+
+  Future<String?> scApduCmd(int slot, List<int> pbInApdu, int usInApduLen,
+      List<int> pbOut, List<int> pbOutLen) {
+    return Cs50sdkupdatePlatform.instance
+        .scApduCmd(slot, pbInApdu, usInApduLen, pbOut, pbOutLen);
+  }
+
+//
+// Magnetic Card Methods
+//
+
+  Future<String?> mcrOpen() {
+    return Cs50sdkupdatePlatform.instance.mcrOpen();
+  }
+
+  Future<String?> mcrClose() {
+    return Cs50sdkupdatePlatform.instance.mcrClose();
+  }
+
+  Future<String?> mcrReset() {
+    return Cs50sdkupdatePlatform.instance.mcrReset();
+  }
+
+  Future<String?> mcrCheck() {
+    return Cs50sdkupdatePlatform.instance.mcrCheck();
+  }
+
+  Future<Map<String, dynamic>> mcrRead(
+      int keyNo, int mode, List<int> trackBuffers) {
+    return Cs50sdkupdatePlatform.instance.mcrRead(keyNo, mode, trackBuffers);
+  }
+
+//
+// Payment General Methods
+//
+
+  Future<String?> initPaySysKernel() {
+    return Cs50sdkupdatePlatform.instance.initPaySysKernel();
+  }
+
+  Future<String?> emvSetKeyPadPrompt(String prompt) {
+    return Cs50sdkupdatePlatform.instance.emvSetKeyPadPrompt(prompt);
+  }
+
+  Future<String?> emvSetCurrencyCode(String code) {
+    return Cs50sdkupdatePlatform.instance.emvSetCurrencyCode(code);
+  }
+
+  Future<String?> emvSetInputPinCallback(int timeout) {
+    return Cs50sdkupdatePlatform.instance.emvSetInputPinCallback(timeout);
+  }
+
+  Future<String?> emvKernelPinInput(int timeout, int keyId) {
+    return Cs50sdkupdatePlatform.instance.emvKernelPinInput(timeout, keyId);
+  }
+
+  Future<String?> initOnLinePINContext() {
+    return Cs50sdkupdatePlatform.instance.initOnLinePINContext();
+  }
+
+  Future<String?> callContactEmvPinblock(int pinType) {
+    return Cs50sdkupdatePlatform.instance.callContactEmvPinblock(pinType);
+  }
+
+//
+// EMVCO Methods
+//
+
+  Future<String?> emvGetPinBlock(int type, int pinkeyN, List<int> cardNo,
+      List<int> mode, List<int> pinBlock, int timeout) {
+    return Cs50sdkupdatePlatform.instance
+        .emvGetPinBlock(type, pinkeyN, cardNo, mode, pinBlock, timeout);
+  }
+
+  Future<String?> emvGetDukptPinblock(int type, int pinkeyN, List<int> cardNo,
+      List<int> pinBlock, List<int> outKsn, List<int> pinKcv, int timeout) {
+    return Cs50sdkupdatePlatform.instance.emvGetDukptPinblock(
+        type, pinkeyN, cardNo, pinBlock, outKsn, pinKcv, timeout);
+  }
+
+//
+// PCI Methods
+//
+
+  Future<String?> pciWritePinMKey(
+      int keyNo, int keyLen, List<int> keyData, int mode) {
+    return Cs50sdkupdatePlatform.instance
+        .pciWritePinMKey(keyNo, keyLen, keyData, mode);
+  }
+
+  Future<String?> pciWriteMacMKey(
+      int keyNo, int keyLen, List<int> keyData, int mode) {
+    return Cs50sdkupdatePlatform.instance
+        .pciWriteMacMKey(keyNo, keyLen, keyData, mode);
+  }
+
+  Future<String?> pciWriteDesMKey(
+      int keyNo, int keyLen, List<int> keyData, int mode) {
+    return Cs50sdkupdatePlatform.instance
+        .pciWriteDesMKey(keyNo, keyLen, keyData, mode);
+  }
+
+  Future<String?> pciWritePinKey(
+      int keyNo, int keyLen, List<int> keyData, int mode, int mkeyNo) {
+    return Cs50sdkupdatePlatform.instance
+        .pciWritePinKey(keyNo, keyLen, keyData, mode, mkeyNo);
+  }
+
+  Future<String?> pciWriteMacKey(
+      int keyNo, int keyLen, List<int> keyData, int mode, int mkeyNo) {
+    return Cs50sdkupdatePlatform.instance
+        .pciWriteMacKey(keyNo, keyLen, keyData, mode, mkeyNo);
+  }
+
+  Future<String?> pciWriteDesKey(
+      int keyNo, int keyLen, List<int> keyData, int mode, int mkeyNo) {
+    return Cs50sdkupdatePlatform.instance
+        .pciWriteDesKey(keyNo, keyLen, keyData, mode, mkeyNo);
+  }
+
+  Future<String?> pciReadKCV(int mKeyNo, int keyType, List<int> mKeyKcv) {
+    return Cs50sdkupdatePlatform.instance.pciReadKCV(mKeyNo, keyType, mKeyKcv);
+  }
+
+  Future<String?> pciGetPin(
+      int keyNo,
+      int minLen,
+      int maxLen,
+      int mode,
+      List<int> cardNo,
+      List<int> pinBlock,
+      List<int> pinPasswd,
+      int pinLen,
+      int mark,
+      List<int> iAmount,
+      int waitTimeSec) {
+    return Cs50sdkupdatePlatform.instance.pciGetPin(keyNo, minLen, maxLen, mode,
+        cardNo, pinBlock, pinPasswd, pinLen, mark, iAmount, waitTimeSec);
+  }
+
+  Future<String?> pciGetMac(
+      int keyNo, int inLen, List<int> inData, List<int> macOut, int mode) {
+    return Cs50sdkupdatePlatform.instance
+        .pciGetMac(keyNo, inLen, inData, macOut, mode);
+  }
+
+  Future<String?> pciGetDes(
+      int keyNo, int inLen, List<int> inData, List<int> desOut, int mode) {
+    return Cs50sdkupdatePlatform.instance
+        .pciGetDes(keyNo, inLen, inData, desOut, mode);
+  }
+
+  Future<String?> pciWriteDukptIpek(
+      int keyId, int ipekLen, List<int> ipek, int ksnLen, List<int> ksn) {
+    return Cs50sdkupdatePlatform.instance
+        .pciWriteDukptIpek(keyId, ipekLen, ipek, ksnLen, ksn);
+  }
+
+  Future<String?> pciGetDukptMac(
+      int keyId,
+      int mode,
+      int macDataLen,
+      List<int> macDataIn,
+      List<int> macOut,
+      List<int> outKsn,
+      List<int> macKcv) {
+    return Cs50sdkupdatePlatform.instance.pciGetDukptMac(
+        keyId, mode, macDataLen, macDataIn, macOut, outKsn, macKcv);
+  }
+
+  Future<String?> pciGetDukptDes(
+      int keyId,
+      int mode,
+      int desMode,
+      int desDataLen,
+      List<int> desDataIn,
+      List<int> iv,
+      List<int> desOut,
+      List<int> outKsn,
+      List<int> desKcv) {
+    return Cs50sdkupdatePlatform.instance.pciGetDukptDes(keyId, mode, desMode,
+        desDataLen, desDataIn, iv, desOut, outKsn, desKcv);
+  }
+
+  
 }

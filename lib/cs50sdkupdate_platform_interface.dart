@@ -293,6 +293,140 @@ abstract class Cs50sdkupdatePlatform extends PlatformInterface {
     throw UnimplementedError('closeScanner() has not been implemented.');
   }
 
+  // Add these to cs50sdkupdate_platform_interface.dart
+// IC Card / SAM Card methods
+  Future<String?> iccOpen(int slot, int vccMode, List<int> atr) {
+    throw UnimplementedError('iccOpen() has not been implemented.');
+  }
+
+  Future<String?> iccClose(int slot) {
+    throw UnimplementedError('iccClose() has not been implemented.');
+  }
+
+  Future<String?> iccCommand(int slot, List<int> apduSend, List<int> apduResp) {
+    throw UnimplementedError('iccCommand() has not been implemented.');
+  }
+
+  Future<String?> iccCheck(int slot) {
+    throw UnimplementedError('iccCheck() has not been implemented.');
+  }
+
+  Future<String?> scApduCmd(int slot, List<int> pbInApdu, int usInApduLen, List<int> pbOut, List<int> pbOutLen) {
+    throw UnimplementedError('scApduCmd() has not been implemented.');
+  }
+
+// Magnetic Card methods
+  Future<String?> mcrOpen() {
+    throw UnimplementedError('mcrOpen() has not been implemented.');
+  }
+
+  Future<String?> mcrClose() {
+    throw UnimplementedError('mcrClose() has not been implemented.');
+  }
+
+  Future<String?> mcrReset() {
+    throw UnimplementedError('mcrReset() has not been implemented.');
+  }
+
+  Future<String?> mcrCheck() {
+    throw UnimplementedError('mcrCheck() has not been implemented.');
+  }
+
+  Future<Map<String, dynamic>> mcrRead(int keyNo, int mode, List<int> trackBuffers) {
+    throw UnimplementedError('mcrRead() has not been implemented.');
+  }
+
+// Payment general APIs
+  Future<String?> initPaySysKernel() {
+    throw UnimplementedError('initPaySysKernel() has not been implemented.');
+  }
+
+  Future<String?> emvSetKeyPadPrompt(String prompt) {
+    throw UnimplementedError('emvSetKeyPadPrompt() has not been implemented.');
+  }
+
+  Future<String?> emvSetCurrencyCode(String code) {
+    throw UnimplementedError('emvSetCurrencyCode() has not been implemented.');
+  }
+
+  Future<String?> emvSetInputPinCallback(int timeout) {
+    throw UnimplementedError('emvSetInputPinCallback() has not been implemented.');
+  }
+
+  Future<String?> emvKernelPinInput(int timeout, int keyId) {
+    throw UnimplementedError('emvKernelPinInput() has not been implemented.');
+  }
+
+  Future<String?> initOnLinePINContext() {
+    throw UnimplementedError('initOnLinePINContext() has not been implemented.');
+  }
+
+  Future<String?> callContactEmvPinblock(int pinType) {
+    throw UnimplementedError('callContactEmvPinblock() has not been implemented.');
+  }
+
+// EMVCO methods
+  Future<String?> emvGetPinBlock(int type, int pinkeyN, List<int> cardNo, List<int> mode, List<int> pinBlock, int timeout) {
+    throw UnimplementedError('emvGetPinBlock() has not been implemented.');
+  }
+
+  Future<String?> emvGetDukptPinblock(int type, int pinkeyN, List<int> cardNo, List<int> pinBlock, List<int> outKsn, List<int> pinKcv, int timeout) {
+    throw UnimplementedError('emvGetDukptPinblock() has not been implemented.');
+  }
+
+// PCI methods
+  Future<String?> pciWritePinMKey(int keyNo, int keyLen, List<int> keyData, int mode) {
+    throw UnimplementedError('pciWritePinMKey() has not been implemented.');
+  }
+
+  Future<String?> pciWriteMacMKey(int keyNo, int keyLen, List<int> keyData, int mode) {
+    throw UnimplementedError('pciWriteMacMKey() has not been implemented.');
+  }
+
+  Future<String?> pciWriteDesMKey(int keyNo, int keyLen, List<int> keyData, int mode) {
+    throw UnimplementedError('pciWriteDesMKey() has not been implemented.');
+  }
+
+  Future<String?> pciWritePinKey(int keyNo, int keyLen, List<int> keyData, int mode, int mkeyNo) {
+    throw UnimplementedError('pciWritePinKey() has not been implemented.');
+  }
+
+  Future<String?> pciWriteMacKey(int keyNo, int keyLen, List<int> keyData, int mode, int mkeyNo) {
+    throw UnimplementedError('pciWriteMacKey() has not been implemented.');
+  }
+
+  Future<String?> pciWriteDesKey(int keyNo, int keyLen, List<int> keyData, int mode, int mkeyNo) {
+    throw UnimplementedError('pciWriteDesKey() has not been implemented.');
+  }
+
+  Future<String?> pciReadKCV(int mKeyNo, int keyType, List<int> mKeyKcv) {
+    throw UnimplementedError('pciReadKCV() has not been implemented.');
+  }
+
+  Future<String?> pciGetPin(int keyNo, int minLen, int maxLen, int mode, List<int> cardNo, List<int> pinBlock, List<int> pinPasswd, int pinLen, int mark, List<int> iAmount, int waitTimeSec) {
+    throw UnimplementedError('pciGetPin() has not been implemented.');
+  }
+
+  Future<String?> pciGetMac(int keyNo, int inLen, List<int> inData, List<int> macOut, int mode) {
+    throw UnimplementedError('pciGetMac() has not been implemented.');
+  }
+
+  Future<String?> pciGetDes(int keyNo, int inLen, List<int> inData, List<int> desOut, int mode) {
+    throw UnimplementedError('pciGetDes() has not been implemented.');
+  }
+
+  Future<String?> pciWriteDukptIpek(int keyId, int ipekLen, List<int> ipek, int ksnLen, List<int> ksn) {
+    throw UnimplementedError('pciWriteDukptIpek() has not been implemented.');
+  }
+
+  Future<String?> pciGetDukptMac(int keyId, int mode, int macDataLen, List<int> macDataIn, List<int> macOut, List<int> outKsn, List<int> macKcv) {
+    throw UnimplementedError('pciGetDukptMac() has not been implemented.');
+  }
+
+  Future<String?> pciGetDukptDes(int keyId, int mode, int desMode, int desDataLen, List<int> desDataIn, List<int> iv, List<int> desOut, List<int> outKsn, List<int> desKcv) {
+    throw UnimplementedError('pciGetDukptDes() has not been implemented.');
+  }
+
   // No longer needed methods - kept for backwards compatibility
   Future<void> startMonitoringPrintJobs() async {}
   Future<List<Map<String, dynamic>>> getAllPrintJobs() async => [];

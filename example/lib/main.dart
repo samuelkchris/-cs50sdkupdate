@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:cs50sdkupdate/cs50sdkupdate.dart';
 import 'package:cs50sdkupdate/cs50sdkupdate_method_channel.dart';
+import 'package:cs50sdkupdate_example/payments.dart';
 import 'package:cs50sdkupdate_example/pdf_printer.dart';
 import 'package:cs50sdkupdate_example/print_history.dart';
 import 'package:cs50sdkupdate_example/progress.dart';
@@ -790,6 +791,14 @@ class _HomePageState extends State<HomePage> {
         _buildButton(Icons.list, 'View Print History', _viewPrintJobs),
         _buildButton(Icons.refresh, 'Retry Failed Jobs', _retryFailedJobs),
       ]),
+      //payments
+      const SizedBox(height: 16),
+      _buildSection('Payments',
+          [
+        _buildButton(
+            Icons.refresh, 'view payments apis',_gotoPayments ),
+      ]),
+
     ],
     ),
     ),
@@ -1148,6 +1157,13 @@ class _HomePageState extends State<HomePage> {
       canChangePageFormat: false,
       canDebug: false,
       actions: const <PdfPreviewAction>[],
+    );
+  }
+
+  void _gotoPayments() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const CardPaymentTestApp()),
     );
   }
 }
